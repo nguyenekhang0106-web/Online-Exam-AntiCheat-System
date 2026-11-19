@@ -1,0 +1,49 @@
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Maven
+target/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Java / packaged artifacts
+*.class
+*.war
+*.ear
+hs_err_pid*
+replay_pid*
+
+# VS Code: share recommendations only
+.vscode/*
+!.vscode/extensions.json
+*.code-workspace
+
+# Local build cache and runtime
+.cache/
+.local/
+
+# Secrets: keep outside src/main/resources and outside WAR
+config/local/
+**/application-local.properties
+**/database.properties
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key

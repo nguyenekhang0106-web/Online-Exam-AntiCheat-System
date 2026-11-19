@@ -1,0 +1,65 @@
+﻿param(
+    [Parameter(Mandatory = $true)][string]$TomcatHome,
+    [int]$Port = 18080
+)
+$ErrorActionPreference = 'Stop'
+$root = Split-Path $PSScriptRoot -Parent
+$base = Join-Path $root 'target/tomcat-smoke'
+$war = Join-Path $root 'target/online-exam.war'
+if (!(Test-Path $war)) { throw 'Build WAR first: .\mvnw.cmd clean verify' }
+if (!$env:JAVA_HOME) { throw 'Set JAVA_HOME to a JDK 21+ directory first.' }
+if (Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue) {
+    throw "Port $Port is in use. Choose another -Port."
+}
+foreach ($dir in @('conf', 'logs', 'temp', 'webapps', 'work')) {
+    New-Item -ItemType Directory -Force (Join-Path $base $dir) | Out-Null
+}
+# Copy only standard runtime config; do not copy users, realms or deployed apps.
+foreach ($file in @('web.xml', 'catalina.properties')) {
+    Copy-Item (Join-Path $TomcatHome "conf/$file") (Join-Path $base "conf/$file")
+}
+@"
+<Server port="-1">
+  <Service name="Catalina">
+    <Connector address="127.0.0.1" port="$Port" protocol="HTTP/1.1" />
+    <Engine name="Catalina" defaultHost="localhost">
+      <Host name="localhost" appBase="webapps" unpackWARs="false" autoDeploy="false" />
+    </Engine>
+  </Service>
+</Server>
+"@ | Set-Content -Encoding UTF8 (Join-Path $base 'conf/server.xml')
+Copy-Item $war (Join-Path $base 'webapps/online-exam.war')
+$classpath = (Join-Path $TomcatHome 'bin/bootstrap.jar') + ';' + (Join-Path $TomcatHome 'bin/tomcat-juli.jar')
+$javaArgs = @("-Dcatalina.home=`"$TomcatHome`"", "-Dcatalina.base=`"$base`"",
+    "-Djava.io.tmpdir=`"$base/temp`"", '-cp', "`"$classpath`"", 'org.apache.catalina.startup.Bootstrap', 'start')
+$process = Start-Process -FilePath (Join-Path $env:JAVA_HOME 'bin/java.exe') -ArgumentList $javaArgs `
+    -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $base 'logs/stdout.log') `
+    -RedirectStandardError (Join-Path $base 'logs/stderr.log')
+try {
+    $url = "http://127.0.0.1:$Port/online-exam"
+    $ready = $false
+    for ($i = 0; $i -lt 40; $i++) {
+        if ($process.HasExited) { throw "Tomcat exited. See $base/logs/stderr.log" }
+        try {
+            $response = Invoke-WebRequest "$url/home" -UseBasicParsing -TimeoutSec 2
+            if ($response.StatusCode -eq 200) { $ready = $true; break }
+        } catch { Start-Sleep -Milliseconds 500 }
+    }
+    if (!$ready) { throw "Tomcat did not become ready. See $base/logs/stderr.log" }
+    if ($response.Content -notmatch 'Nhóm: Khang, Trung, Cường' -or
+        $response.Content -notmatch 'Nền tảng JSP/Servlet đã hoạt động!') { throw 'JSP output/UTF-8 mismatch' }
+    Write-Output 'PASS /home: HTTP 200, Servlet attribute rendered, UTF-8 intact'
+    $welcome = Invoke-WebRequest "$url/" -UseBasicParsing
+    if ($welcome.StatusCode -ne 200 -or $welcome.Content -notmatch 'Nền tảng JSP/Servlet') { throw 'Welcome mapping failed' }
+    Write-Output 'PASS /: welcome mapping'
+    $css = Invoke-WebRequest "$url/assets/css/app.css" -UseBasicParsing
+    if ($css.StatusCode -ne 200 -or $css.Content -notmatch 'font-family') { throw 'CSS failed' }
+    Write-Output 'PASS /assets/css/app.css: HTTP 200'
+    $status = 0
+    try { $null = Invoke-WebRequest "$url/WEB-INF/views/home.jsp" -UseBasicParsing }
+    catch { if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode } else { throw } }
+    if ($status -ne 404) { throw "Expected protected JSP HTTP 404; got $status" }
+    Write-Output 'PASS /WEB-INF/views/home.jsp: HTTP 404'
+} finally {
+    if (!$process.HasExited) { Stop-Process -Id $process.Id; $process.WaitForExit() }
+}
