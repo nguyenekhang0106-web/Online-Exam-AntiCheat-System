@@ -5,6 +5,7 @@
 <link rel="stylesheet" href="../assets/css/app.css"></head>
 <body><main><h1>Tài khoản</h1>
 <p>Bạn đang đăng nhập với vai trò ${roleLabel}.</p>
+<p><a href="subjects">Môn học</a></p>
 <% if ("ADMIN".equals(request.getAttribute("roleLabel"))) { %><p><a href="users">Quản lý người dùng</a></p><% } %>
 <form method="post" action="../logout">
     <input type="hidden" name="csrf" value="${sessionScope.csrf}">
