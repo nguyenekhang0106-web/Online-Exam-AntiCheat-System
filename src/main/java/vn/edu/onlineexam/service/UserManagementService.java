@@ -17,6 +17,49 @@ public final class UserManagementService {
     public static void requireAdmin(AuthUser actor) {
         if (actor == null || !actor.roles().contains("ADMIN")) throw new SecurityException();
     }
+    private final vn.edu.onlineexam.dao.RoleDao roleDao = new vn.edu.onlineexam.dao.RoleDao();
+    private final vn.edu.onlineexam.dao.AuthDao authDao = new vn.edu.onlineexam.dao.AuthDao();
+    public static final Set<String> MANAGED_ROLES = Set.of("ADMIN", "TEACHER", "STUDENT");
+
+    public Membership membership(AuthUser actor, long id) throws SQLException {
+        requireAdmin(actor);
+        checkId(id);
+        return jdbc.read(c -> roleDao.membership(c, id));
+    }
+
+    public void changeRole(AuthUser actor, String sessionRef, long id, String code, boolean grant) throws SQLException {
+        requireAdmin(actor);
+        checkId(id);
+        if (code == null || !MANAGED_ROLES.contains(code))
+            throw new IllegalArgumentException("Vai trò không hợp lệ.");
+        try {
+            jdbc.transaction(c -> {
+                var admins = dao.lockActiveAdmins(c);
+                if (!admins.contains(actor.id()) || sessionRef == null ||
+                        !Long.valueOf(actor.id()).equals(authDao.active(c, sessionRef))) throw new SecurityException();
+                if (dao.lockStatus(c, id) == null) throw new java.util.NoSuchElementException();
+                var role = roleDao.findByCode(c, code).orElseThrow(java.util.NoSuchElementException::new);
+                if (!grant && code.equals("ADMIN") && admins.contains(id)) {
+                    if (admins.size() == 1) throw new Conflict("Không thể thu hồi quyền ADMIN hoạt động cuối cùng.");
+                    if (actor.id() == id) throw new Conflict("Bạn không thể tự thu hồi quyền ADMIN.");
+                }
+                if (grant) {
+                    if (!dao.assignInitialRole(c, id, code, actor.id())) throw new java.util.NoSuchElementException();
+                } else if (!roleDao.remove(c, id, role.getId())) {
+                    throw new Conflict("Tài khoản chưa có vai trò này.");
+                }
+                dao.revokeSessions(c, id);
+                dao.audit(c, actor.id(), id, (grant ? "ROLE_GRANT_" : "ROLE_REVOKE_") + code);
+                return null;
+            });
+        } catch (SQLException e) {
+            if (e.getErrorCode() == 1062) throw new Conflict("Tài khoản đã có vai trò này.");
+            if (e.getErrorCode() == 1213 || e.getErrorCode() == 1205)
+                throw new Conflict("Dữ liệu đang được cập nhật. Hãy tải lại trang.");
+            throw e;
+        }
+    }
+
     private static String field(String s,int limit,boolean required) {
         String v=s==null ? "" : s.strip();
         if ((required && v.isEmpty()) || v.length()>limit || v.chars().anyMatch(Character::isISOControl))
