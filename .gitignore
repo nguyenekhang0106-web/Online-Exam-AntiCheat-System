@@ -32,6 +32,7 @@ replay_pid*
 # VS Code: share recommendations only
 .vscode/*
 !.vscode/extensions.json
+!.vscode/tasks.json
 *.code-workspace
 
 # Local build cache and runtime

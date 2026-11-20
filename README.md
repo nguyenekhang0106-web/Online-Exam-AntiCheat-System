@@ -82,6 +82,19 @@ Live Server không chạy được JSP/Servlet; phải dùng Tomcat.
 
 ## Chạy WAR trên Tomcat
 
+**Khởi động ngay trong VS Code trên Windows:** mở thư mục chứa `pom.xml`, nhấn
+**Ctrl+Shift+B** và chọn **Online Exam: Run Tomcat (Maven Wrapper)** nếu được hỏi.
+Task chạy `mvnw.cmd package`, đặt `ONLINE_EXAM_ENV_FILE` tới file `.env` ở gốc repo,
+deploy WAR vào `.local/tomcat-vscode` rồi chạy Tomcat trong terminal của task.
+Sau khi thấy `Server startup`, mở http://127.0.0.1:18080/online-exam/home hoặc
+http://127.0.0.1:18080/online-exam/login. Dừng bằng Ctrl+C trong terminal đó trước khi build lại.
+Nếu Tomcat nằm ngoài thư mục cài mặc định, đặt `CATALINA_HOME` rồi mở lại VS Code.
+Lần chạy đầu cần Internet nếu Wrapper và dependency chưa có trong cache Maven.
+
+Extension Al-rimi.tomcat 4.2.5 gọi cố định `mvn clean package` trong chế độ Maven.
+Dùng task ở trên để build và khởi động bằng Wrapper của nhóm. Nút Maven Build của extension
+vẫn yêu cầu lệnh `mvn` trong PATH.
+
 Build tạo `target/online-exam.war`. Với Tomcat ZIP thuộc quyền sở hữu của bạn:
 
 ```powershell
