@@ -1,0 +1,11 @@
+<%@ page contentType="text/html; charset=UTF-8" %>
+<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tài khoản | Online Exam</title>
+<link rel="stylesheet" href="../assets/css/app.css"></head>
+<body><main><h1>Tài khoản</h1>
+<p>Bạn đang đăng nhập với vai trò ${roleLabel}.</p>
+<form method="post" action="../logout">
+    <input type="hidden" name="csrf" value="${sessionScope.csrf}">
+    <button>Đăng xuất</button>
+</form></main></body></html>

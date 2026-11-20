@@ -1,6 +1,8 @@
 ﻿param(
     [Parameter(Mandatory = $true)][string]$TomcatHome,
-    [int]$Port = 18080
+    [int]$Port = 18080,
+    [switch]$AuthMysql,
+    [switch]$InteractivePasswords
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -60,6 +62,25 @@ try {
     catch { if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode } else { throw } }
     if ($status -ne 404) { throw "Expected protected JSP HTTP 404; got $status" }
     Write-Output 'PASS /WEB-INF/views/home.jsp: HTTP 404'
+    $login = Invoke-WebRequest "$url/login" -UseBasicParsing -SessionVariable browser
+    if ($login.Content -notmatch 'name="csrf" value="[0-9a-f-]{36}"') { throw 'Login CSRF missing' }
+    foreach ($path in 'admin/account','teacher/account','student/account') {
+        $guest = Invoke-WebRequest "$url/$path" -WebSession $browser -UseBasicParsing
+        if ($guest.BaseResponse.ResponseUri.AbsolutePath -ne '/online-exam/login') { throw "Guest reached $path" }
+    }
+    foreach ($case in @(@('GET','logout',405),@('POST','logout',403),@('POST','login',403))) {
+        $status = 0
+        try { $null = Invoke-WebRequest "$url/$($case[1])" -Method $case[0] -UseBasicParsing -WebSession $browser }
+        catch { if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode } else { throw } }
+        if ($status -ne $case[2]) { throw "Unexpected status $status for $case" }
+    }
+    Write-Output 'PASS login JSP, guest redirects, logout method and missing CSRF'
+    if ($AuthMysql) {
+        $options = @("$Port")
+        if ($InteractivePasswords) { $options += 'interactive' }
+        & "$env:JAVA_HOME/bin/java.exe" -cp "$root/target/classes;$root/target/online-exam/WEB-INF/lib/*" "$root/scripts/AcceptAuth.java" @options
+        if ($LASTEXITCODE) { throw 'Auth acceptance failed' }
+    }
 } finally {
     if (!$process.HasExited) { Stop-Process -Id $process.Id; $process.WaitForExit() }
 }

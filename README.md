@@ -143,8 +143,27 @@ JSP hiện chỉ hiển thị chuỗi cố định từ server; khi hiển thị
 ## Database và secret
 
 Trang kiểm tra không cần database. Đã viết SQL migration và Bean nhưng chưa thực thi tạo schema/user hoặc kiểm thử đăng nhập MySQL.
-Giai đoạn sau thống nhất `DB_URL`, `DB_USER`, `DB_PASSWORD` qua biến môi trường hoặc
-JNDI DataSource của Tomcat. Hiện chưa có code đọc các biến này; file `.env` không tự được Java nạp.
+Mở `.env` ở thư mục gốc và điền mật khẩu sau `DB_PASSWORD=`. Trên máy mới, sao chép
+`.env.example` thành `.env` nếu chưa có. Lưu UTF-8 không BOM, mỗi dòng một KEY=value.
+Giá trị sau dấu bằng đầu tiên được dùng nguyên văn, kể cả # và dấu bằng; không bọc mật khẩu trong dấu nháy.
+Giá trị biến môi trường không trống được ưu tiên riêng cho từng khóa. Cả ba khóa đã có thì Java bỏ qua file.
+Git đã ignore `.env`; chỉ chia sẻ `.env.example` có password trống. Giữ file thật ngoài webapps và resources.
+
+Trong PowerShell ở gốc repo (CMD dùng cùng lệnh Java), chạy:
+
+```powershell
+.\mvnw.cmd clean package
+java -cp "target/classes;target/online-exam/WEB-INF/lib/*" scripts/JdbcSmoke.java
+```
+
+Trong IntelliJ chọn working directory là gốc repo. Với Tomcat chạy tay, đặt
+`$env:ONLINE_EXAM_ENV_FILE = 'D:\Online-Exam-AntiCheat-System\.env'` trước khi chạy catalina.bat
+như mục triển khai WAR. Với Tomcat Windows service, thêm Java option
+`-Donlineexam.envFile=D:\Online-Exam-AntiCheat-System\.env` và khởi động lại service.
+Tài khoản chạy Tomcat cần quyền đọc file. Java option ưu tiên hơn ONLINE_EXAM_ENV_FILE.
+Nếu thiếu khóa, kiểm tra file được chọn và các biến đã đặt ở terminal/IDE.
+Nếu lỗi JDBC, kiểm tra MySQL lắng nghe 127.0.0.1:3306, mật khẩu, schema online_exam_dev,
+bảng roles và quyền SELECT. Khi chia sẻ lỗi chỉ gửi SQLState/vendorCode. Không gửi file cấu hình.
 Để file cấu hình cá nhân ngoài source, ví dụ `config/local/` đã ignore.
 Không đặt mật khẩu vào README, JDBC URL, pom.xml, JSP hay src/main/resources.
 Gitignore không ngăn Maven đóng gói file nhạy cảm nằm trong source và không bỏ theo dõi file đã tracked.
