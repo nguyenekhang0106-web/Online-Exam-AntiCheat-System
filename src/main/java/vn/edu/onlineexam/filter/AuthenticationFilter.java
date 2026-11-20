@@ -39,6 +39,7 @@ public class AuthenticationFilter implements Filter {
                 if (user==null) { session.invalidate(); res.sendRedirect(req.getContextPath()+"/login"); return; }
                 if (!user.roles().contains(required)) { res.sendError(403); return; }
                 req.setAttribute("roleLabel",required);
+                req.setAttribute("authenticatedUser",user);
             } catch (SQLException | IllegalStateException | IllegalArgumentException e) { res.sendError(503); return; }
         }
         chain.doFilter(req,res);
