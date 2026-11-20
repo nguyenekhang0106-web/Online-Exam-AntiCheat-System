@@ -2,6 +2,8 @@
     [Parameter(Mandatory = $true)][string]$TomcatHome,
     [int]$Port = 18080,
     [switch]$AuthMysql,
+    [switch]$RoleMysql,
+    [switch]$SubjectMysql,
     [switch]$InteractivePasswords
 )
 $ErrorActionPreference = 'Stop'
@@ -64,7 +66,7 @@ try {
     Write-Output 'PASS /WEB-INF/views/home.jsp: HTTP 404'
     $login = Invoke-WebRequest "$url/login" -UseBasicParsing -SessionVariable browser
     if ($login.Content -notmatch 'name="csrf" value="[0-9a-f-]{36}"') { throw 'Login CSRF missing' }
-    foreach ($path in 'admin/account','teacher/account','student/account','admin/users','admin/users/new','admin/users/edit?id=1','admin/users/lock','admin/users/unlock') {
+    foreach ($path in 'admin/account','teacher/account','student/account','admin/users','admin/users/new','admin/users/edit?id=1','admin/users/lock','admin/users/unlock','admin/users/roles') {
         $guest = Invoke-WebRequest "$url/$path" -WebSession $browser -UseBasicParsing
         if ($guest.BaseResponse.ResponseUri.AbsolutePath -ne '/online-exam/login') { throw "Guest reached $path" }
     }
@@ -75,7 +77,7 @@ try {
         if ($status -ne $case[2]) { throw "Unexpected status $status for $case" }
     }
     Write-Output 'PASS login JSP, guest redirects, logout method and missing CSRF'
-    foreach ($path in 'admin/users/new','admin/users/edit','admin/users/lock','admin/users/unlock') {
+    foreach ($path in 'admin/users/new','admin/users/edit','admin/users/lock','admin/users/unlock','admin/users/roles') {
         foreach ($body in @{},@{csrf='invalid'}) {
             $status = 0
             try { $null = Invoke-WebRequest "$url/$path" -Method Post -Body $body -WebSession $browser -UseBasicParsing }
@@ -84,6 +86,16 @@ try {
         }
     }
     Write-Output 'PASS create/edit guest redirects and POST missing/invalid CSRF'
+    if ($RoleMysql -or $SubjectMysql) {
+        $classes = Join-Path $root 'target/role-check'
+        New-Item -ItemType Directory -Force $classes | Out-Null
+        $cp = "$root/target/classes;$root/target/online-exam/WEB-INF/lib/*;$classes"
+        & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -cp $cp -d $classes "$root/scripts/VerifyRoles.java" "$root/scripts/AcceptAuth.java" "$root/scripts/VerifySubjects.java"
+        if ($LASTEXITCODE) { throw 'Role test compilation failed' }
+        $suite = if ($SubjectMysql) { 'VerifySubjects' } else { 'VerifyRoles' }
+        & "$env:JAVA_HOME/bin/java.exe" -cp $cp $suite $Port
+        if ($LASTEXITCODE) { throw 'Role acceptance failed' }
+    }
     if ($AuthMysql) {
         $options = @("$Port")
         if ($InteractivePasswords) { $options += 'interactive' }
