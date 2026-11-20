@@ -111,3 +111,36 @@ File sửa: UserDao, UserDirectory.Row, UserManagementService, UserManagementSer
 - PASS: MySQL Server 9.6 thật, instance tạm chỉ bind loopback cổng 13367, schema status_test riêng lấy V1, dữ liệu fixture tự sinh. VerifyUserStatus kiểm tra trạng thái sai, target thiếu, tự khóa, ADMIN cuối, actor không có quyền, version cũ, khóa/mở, login mới, từ chối session trước khóa ngay cả sau khi mở, hai ADMIN khóa chéo qua hai kết nối. Chèn lỗi SQLException có chủ ý tại bước session/audit trên connection thật để kiểm chứng rollback. Đã dừng instance tạm, không đổi .env. Test đầu tiên dùng version trước login và bị từ chối đúng vì login thay đổi last_login_at/updated_at; đã lấy version sau login và chạy đạt trên schema test mới.
 - PASS HTTP Tomcat: guest bị chuyển về login tại hai endpoint, POST thiếu/sai CSRF bị 403, home/welcome/CSS/login vẫn hoạt động.
 - NOT RUN: xác nhận end-to-end bằng trình duyệt và phiên thật cho ADMIN/TEACHER/STUDENT ở hai endpoint, thông báo/giữ bộ lọc sau POST, GET 405 và các mã 400/404/409 qua HTTP đã đăng nhập. Khi nghiệm thu dùng DB cô lập và tài khoản riêng; đăng nhập đồng thời ADMIN và user thử ở hai trình duyệt, khóa rồi thử request của user, mở khóa rồi thử lại cookie cũ và đăng nhập mới. Không khóa ba DEV. Không triển khai 2C.
+
+## 2C · Quản lý vai trò — PARTIAL
+
+Từ danh sách người dùng, chọn **Vai trò**. GET `/admin/users/roles?id=…` đọc danh mục và các liên kết thực tế qua một truy vấn. POST cùng đường dẫn nhận id, role, action (grant/revoke), csrf và xác nhận khi thu hồi ADMIN. Thành công dùng 303 về danh sách. Một tài khoản có nhiều vai trò theo khóa kép của user_roles.
+
+Service lấy danh tính từ Filter, sau đó trong transaction ghi khóa hàng danh mục ADMIN theo thứ tự của 2B.3, kiểm tra lại ADMIN hoạt động và session trong DB rồi khóa user đích. Khóa kép và số dòng DELETE xác định cấp trùng/thu hồi thiếu. Cấm tự thu hồi ADMIN và thu hồi ADMIN hoạt động cuối. Mọi thay đổi ghi audit và thu hồi các phiên của tài khoản đích trong cùng transaction. Login cũng khóa hàng user nên phiên mở đồng thời được sắp thứ tự với thay đổi quyền. Cả cấp và thu hồi đều yêu cầu đăng nhập lại; Filter tiếp tục kiểm tra phiên và quyền từ DB mỗi request bảo vệ.
+
+| Kiểm tra | Kết quả thực tế |
+|---|---|
+| Maven Wrapper clean package | PASS, javac release 21 và WAR. Các script nghiệm thu chạy riêng ngoài Surefire. |
+| VerifyAuth, VerifyUserWrites, VerifyJdbcTransaction | PASS, giả lập xác thực, tạo/sửa hồ sơ, ràng buộc dữ liệu, commit/rollback. |
+| VerifyUserDirectory | PASS, kiểm tra validation/escape và SELECT tìm kiếm, lọc, phân trang trên dev. |
+| VerifyRoles, MySQL 9.6 loopback 13367 | PASS, fixture mới, đa vai trò, mã thiếu khỏi danh mục, cấp trùng, thu hồi thiếu, tự thu hồi, ADMIN cuối, khóa/mở khóa, audit, rollback khi lỗi tại bước session hoặc audit. Hai connection cấp cùng liên kết và thu hồi ADMIN chéo, khóa actor khi request đang chờ đều đạt. |
+| Tomcat 10.1, HTTP thật cổng 18080 với cookie và MySQL cô lập | PASS, guest redirect, CSRF thiếu/sai, ADMIN xem/cấp/thu hồi, từ chối STUDENT và người có TEACHER+STUDENT, escape tên tài khoản, GET có tham số ghi vẫn chỉ đọc, 400/403/404/409, xác nhận ADMIN, redirect và thông báo cấp thành công, phiên cũ mất hiệu lực, login/logout. |
+| Kiểm tra trực quan responsive và thao tác xác nhận trên trình duyệt desktop/mobile | NOT RUN. HTTP client đã gửi form và xác nhận nội dung JSP. Chưa nghiệm thu trực quan. |
+
+File mới: scripts/VerifyRoles.java, src/main/webapp/WEB-INF/views/admin/user-roles.jsp. File sửa: RoleDao.java, UserDirectory.java (DTO), UserManagementService.java, UserManagementServlet.java, admin/users.jsp, scripts/smoke-test.ps1 và tài liệu này.
+
+Chạy lại bằng scripts/smoke-test.ps1 -TomcatHome <Tomcat-10.1> -Port 18080 -RoleMysql khi DB_URL, DB_USER, DB_PASSWORD trỏ đến schema fixture mới trên 127.0.0.1:13367. Tên schema phải là role_test_ theo sau bởi 32 ký tự hex thường; chuẩn bị trước cấu trúc users, roles, user_roles, login_sessions, audit_logs giống V1 và các bảng rỗng. Script tạo dữ liệu thử trong schema này. Trong lần nghiệm thu chỉ đọc metadata và dữ liệu danh sách trên development. Giữ 2B.1/2B.2/2B.3 ở PARTIAL theo các tiêu chí HTTP riêng còn tồn tại.
+
+## 2D · Quản lý môn học — PARTIAL
+
+Roadmap xếp SubjectDao đầu nhóm học vụ của giai đoạn 2 (Admin và đào tạo). 2D là mã tiểu giai đoạn dùng sau 2C. Giai đoạn 3 dành cho ngân hàng câu hỏi.
+
+- GET /{admin,teacher,student}/subjects hỗ trợ tìm mã/tên theo chuỗi literal, lọc ACTIVE/INACTIVE/ARCHIVED, sắp xếp code/name/updated, ASC/DESC và phân trang 1–100 dòng. GET .../subjects/detail?id=... áp dụng cùng phạm vi dữ liệu. Giáo viên đọc môn có offering mình phụ trách; sinh viên đọc môn ENROLLED hoặc COMPLETED, loại WITHDRAWN.
+- ADMIN dùng GET/POST /admin/subjects/new và /admin/subjects/edit; GET edit nhận id. POST /admin/subjects/archive đổi trạng thái. Filter kiểm tra CSRF và phiên; Service xác minh ADMIN đang hoạt động và session trong transaction trước khi ghi. Client chỉ sửa mã, tên, mô tả. Mã trùng do UNIQUE MySQL quyết định theo collation thực tế. Cùng phiên bản updated_at, chỉ một cập nhật cạnh tranh thành công.
+- Archive khóa hàng subject rồi kiểm tra course_offerings, topics, question_banks và exams. Chính sách của module là từ chối archive khi còn bất kỳ tham chiếu nào trong bốn bảng, kể cả lịch sử. Thao tác thành công ghi audit trong cùng transaction.
+- File mới: SubjectDao.java, SubjectManagementService.java, SubjectManagementServlet.java, model/SubjectPage.java, WEB-INF/views/academic/{subjects,subject-detail,subject-form}.jsp, assets/css/subjects.css, scripts/VerifySubjects.java. File sửa: WEB-INF/views/account.jsp, scripts/smoke-test.ps1, docs/implementation-progress.md.
+- PASS Maven Wrapper clean package, release 21. VerifyAuth, VerifyUserWrites, VerifyJdbcTransaction đạt trên giả lập; VerifyUserDirectory đạt với SELECT trên dev.
+- PASS MySQL Server 9.6 tại loopback 13367, schema fixture mới dựng riêng bằng V1–V4. Hai POST sửa đồng thời trả 303/409, mã trùng trả 409, lỗi audit ép trên connection thật rollback INSERT. Đã kiểm tra archive thành công và chặn archive khi có offering. Chỉ đọc dữ liệu development.
+- PASS HTTP Tomcat 10.1 trên 18082 (18080 đang dùng). VerifySubjects kiểm tra danh sách, tạo/sửa, chi tiết, mã/tên bắt buộc, độ dài mã, tìm kiếm literal, sắp xếp/phân trang/lọc, escape HTML, bỏ qua id/status gửi thêm khi tạo, CSRF, quyền ba vai trò, guest, 404 khi thiếu môn hoặc ngoài phạm vi, archive và audit. VerifyRoles chạy cùng fixture và đạt cho login/logout, khóa/mở, vai trò, session và cạnh tranh ADMIN. Maven không tự chạy các script này.
+- Chạy lại bằng scripts/smoke-test.ps1 -TomcatHome <Tomcat-10.1> -Port 18082 -SubjectMysql với schema rỗng V1–V4, URL 127.0.0.1:13367/role_test_<32 hex thường> và credential test trong biến môi trường. VerifySubjects dùng bộ fixture VerifyRoles.
+- Chưa nghiệm thu trực quan desktop/mobile. Cần kiểm tra các trang danh sách, form lỗi, chi tiết và xác nhận lưu trữ trên hai kích thước màn hình. Chưa có fixture riêng cho từng FK topics/question_banks/exams hoặc trạng thái đăng ký WITHDRAWN/COMPLETED. Giữ các trạng thái 2B và 2C theo biên bản trước.
