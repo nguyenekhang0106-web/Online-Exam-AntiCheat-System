@@ -5,7 +5,8 @@
 | 0 · Kiểm kê và thiết kế | Hoàn thành | Đối chiếu README, thiết kế DB, ERD, V1–V7, pom, source MVC, 34 Bean và báo cáo kiểm thử nền tảng. Checker tĩnh đạt 34 bảng, 265 cột và 60 FK. Ma trận đủ 34 dòng. |
 | 1 · JDBC Connection & MVC Foundation | COMPLETED | Build WAR, transaction giả lập, HTTP Tomcat và SELECT trên MySQL thật đều đạt. Phạm vi lần này chỉ gồm nền tảng JDBC/MVC. Auth trong roadmap vẫn chờ triển khai. |
 | 2 · Admin và đào tạo | Chưa triển khai | Kiểm tra phân quyền, ghi danh, khóa tài khoản, rollback và audit. |
-| 2A · Authentication và phiên đăng nhập | PARTIAL | Build, kiểm thử cô lập và smoke HTTP đạt. Chờ nghiệm thu login/logout trên MySQL thật với dữ liệu được phép. |
+| 2A · Authentication và phiên đăng nhập | COMPLETED | Chủ dự án xác nhận cả ba vai trò đã đăng nhập/đăng xuất thành công trên Tomcat + MySQL. TLS và timeout theo thời gian thực vẫn pending. |
+| 2B.1 · Danh sách tài khoản | PARTIAL | Đã triển khai GET /admin/users. MySQL SELECT và smoke HTTP khách đạt. Còn xác minh trang kết quả với phiên ADMIN thật và 403 cho hai vai trò còn lại qua HTTP. |
 | 3 · Câu hỏi | Chưa triển khai | Kiểm tra quyền bank, version bất biến, số đáp án đúng và file cùng version. |
 | 4 · Đề và phân công | Chưa triển khai | Publish nguyên tử, snapshot policy, kiểm tra cùng môn, cửa sổ và override. |
 | 5 · Làm bài | Chưa triển khai | Hai request start đồng thời chỉ tạo một lượt. Autosave đúng option, giữ thứ tự sau khi resume. |
@@ -76,3 +77,37 @@ $env:ONLINE_EXAM_ENV_FILE=(Resolve-Path .env).Path
 .\scripts\smoke-test.ps1 -TomcatHome 'C:\Program Files\Apache Software Foundation\Tomcat 10.1' -AuthMysql -InteractivePasswords
 ```
 Chạy khi không có người khác dùng ba tài khoản DEV. Script nhập ẩn từng mật khẩu, kiểm tra ACTIVE, đổi session ID, route đúng/sai quyền, last_login_at, hàng phiên mới, POST logout, revoked_at và phát lại cookie cũ. Chỉ ghi nhận đạt khi có PASS cho cả ba vai trò. Kiểm thử idle timeout riêng: với server chạy liên tục, để phiên hợp lệ không gửi request trong hơn 30 phút rồi mở trang account; kỳ vọng chuyển về login. Không sửa thời gian hoặc dữ liệu phiên để giả lập hết hạn trên MySQL.
+### Giai đoạn 2B.1
+
+Từ trang tài khoản ADMIN chọn **Quản lý người dùng**. Tìm theo tên, mã hoặc email; lọc role/status; sắp xếp ngày tạo, tên, email hoặc mã, có ID làm khóa phụ. Service kiểm tra ADMIN, mặc định 20 dòng, nhận 1–100 dòng/trang. DAO dùng EXISTS cho lọc role và tổng hợp role trong truy vấn con để mỗi người có đúng một dòng. Chuỗi tìm kiếm và pagination được bind. Chỉ hai enum được phép quyết định ORDER BY.
+
+Tạo UserDao, UserDirectory, UserManagementService, UserManagementServlet, Html, WEB-INF/views/admin/users.jsp và scripts/VerifyUserDirectory.java. Cập nhật AuthenticationFilter để chuyển AuthUser do server xác minh vào request, account.jsp để thêm liên kết và smoke-test.ps1 để kiểm tra khách tại URL mới.
+
+Build WAR đạt. VerifyUserDirectory đạt trên ba tài khoản DEV với SELECT MySQL thật cho search/filter kết hợp, tổng, thứ tự trang, không lặp và không kết quả. Kiểm thử độc lập đạt cho escape HTML, từ chối quyền Service và tham số ngoài whitelist. VerifyAuth giả lập đạt. Smoke Tomcat đạt cho home, CSS, login, logout method, CSRF và chuyển khách từ admin/users về login. Chưa dùng phiên thật trong đợt 2B.1 vì AuthenticationService cập nhật last_seen_at khi xác thực request. Việc xác nhận trang JSP và phân quyền cuối tuyến với phiên thật vẫn chờ. Không test bằng cách thêm user đa vai trò vào dữ liệu mẫu.
+
+### Cổng nghiệm thu trước 2B.2
+
+2B.1 vẫn PARTIAL. Maven clean package, VerifyUserDirectory (SELECT trên online_exam_dev), VerifyAuth (giả lập) và HTTP smoke Tomcat cổng 18081 đã đạt khi kiểm tra lại. Khách bị chuyển về login, các kiểm tra âm tính MySQL/CSRF/cookie đạt. scripts/AcceptAuth.java đã bổ sung kiểm tra HTTP /admin/users trong phiên thật của ba vai trò, gồm tổng số, mã DEV, lọc kết hợp, trang thứ hai và từ chối truy cập ngoài quyền. Chưa chạy phần này vì phải nhập mật khẩu DEV qua console cục bộ. Dùng lệnh nghiệm thu tương tác ở trên với -Port 18081 -AuthMysql -InteractivePasswords. Chờ kết quả PASS cho ba vai trò trước khi triển khai create/update 2B.2.
+
+### 2B.2 — Tạo và sửa tài khoản, 21/11/2026 — PARTIAL
+
+Theo quyết định mới của chủ dự án, triển khai 2B.2 trong khi giữ 2B.1 PARTIAL. Chờ nghiệm thu HTTP với phiên thật cho cả hai giai đoạn.
+
+- UserDao, UserDirectory, UserManagementService, UserManagementServlet và WEB-INF/views/admin/users.jsp đã được mở rộng. Thêm WEB-INF/views/admin/user-form.jsp, scripts/VerifyUserWrites.java. Bổ sung trường hợp GET khách và POST không có CSRF hợp lệ cho hai route mới vào scripts/smoke-test.ps1.
+- GET/POST /admin/users/new và /admin/users/edit?id=... sử dụng Filter hiện có và xác minh ADMIN tại Service. Khi tạo, ADMIN phải chủ động chọn vai trò ban đầu theo quyền cấp vai trò trong hợp đồng. Ghi users, liên kết user_roles có assigned_by và audit trong một transaction; lấy status mặc định ACTIVE từ V1. Không có UI đổi vai trò sau đó. Mật khẩu tối thiểu 12 ký tự, yêu cầu xác nhận và băm bằng PasswordHasher. Form lỗi chỉ giữ thông tin hồ sơ và vai trò đã chọn.
+- Chỉ sửa họ tên, email chưa xác minh, mã và điện thoại. Trường trống tùy chọn lưu NULL. Giữ email đã xác minh nếu chưa có quy trình xác minh lại. Khóa row FOR UPDATE và đối chiếu updated_at để tránh mất cập nhật. UNIQUE là hàng rào cuối khi hai lần gửi đồng thời. Lỗi dữ liệu 400, thiếu quyền 403, thiếu user 404, trùng hoặc phiên bản cũ 409, thành công redirect 303.
+- Build WAR đạt. VerifyUserWrites dùng JDBC double để kiểm tra thao tác create/update, hash, validation, quyền, SQL tham số, rollback khi UNIQUE/thiếu role, stale version, không thấy user, và giới hạn cột profile. Đây không phải thử race bằng hai connection MySQL thật. VerifyUserDirectory đã chạy SELECT trên online_exam_dev; kiểm thử escape HTML và hồi quy VerifyAuth/VerifyJdbcTransaction đạt. Không ghi thử vào online_exam_dev.
+- Nghiệm thu giao diện trên DB test riêng: đăng nhập ADMIN, vào /admin/users, chọn Thêm tài khoản, nhập email/mã mới, xác nhận mật khẩu và chọn vai trò; sau khi lưu kiểm tra thông báo, chỉ có một dòng mới, rồi sửa điện thoại từ chính dòng đó. Thử email/mã trùng, gửi bản sửa cũ từ tab thứ hai (409), kiểm tra đăng nhập bằng mật khẩu ban đầu sau sửa. Kiểm tra TEACHER/STUDENT bị 403. Không dùng ba DEV làm đối tượng sửa. HTTP ghi và đua UNIQUE thật vẫn pending.
+
+### 2B.3 — Khóa/mở khóa — PARTIAL (21/11/2026)
+
+2B.1 và 2B.2 tiếp tục PARTIAL. Trang danh sách có thao tác xác nhận cho ACTIVE → LOCKED và LOCKED → ACTIVE. INACTIVE không có thao tác. POST /admin/users/lock và POST /admin/users/unlock dùng CSRF chung. GET không cập nhật dữ liệu. PRG 303 quay về danh sách với các tham số tìm kiếm/lọc/sắp xếp/phân trang đã mã hóa lại từ danh sách khóa cho phép. Controller xử lý 400 (ID/phiên bản sai định dạng), 403 (quyền), 404 (thiếu user), 409 (xung đột).
+
+Trong một transaction, Service khóa hàng roles.ADMIN làm điểm tuần tự hóa, khóa/tải các ADMIN ACTIVE và kiểm tra lại actor từ DB, khóa hàng target, cấm tự khóa/khóa ADMIN hoạt động cuối. UPDATE có điều kiện theo id, status, updated_at. Tăng version đơn điệu như sửa hồ sơ. Khóa tài khoản thu hồi mọi login_sessions chưa revoked và ghi audit; mở khóa chỉ chuyển trạng thái và ghi audit. Không phục hồi session. Luồng login hiện có khóa hàng users, kiểm tra ACTIVE trước khi tạo phiên; filter xác thực session qua JOIN users và điều kiện active/revoked/expiry. Module thay đổi quyền ADMIN tương lai cần tuân thủ cùng thứ tự khóa để giữ bất biến cuối cùng.
+
+File sửa: UserDao, UserDirectory.Row, UserManagementService, UserManagementServlet, WEB-INF/views/admin/users.jsp, scripts/smoke-test.ps1 và tài liệu này. File mới: scripts/VerifyUserStatus.java.
+
+- PASS: Maven clean package, VerifyAuth, VerifyUserWrites và VerifyUserDirectory (phần MySQL dev chỉ SELECT). Hồi quy bao gồm xác thực, hash, CSRF, hồ sơ, bộ lọc và escape HTML.
+- PASS: MySQL Server 9.6 thật, instance tạm chỉ bind loopback cổng 13367, schema status_test riêng lấy V1, dữ liệu fixture tự sinh. VerifyUserStatus kiểm tra trạng thái sai, target thiếu, tự khóa, ADMIN cuối, actor không có quyền, version cũ, khóa/mở, login mới, từ chối session trước khóa ngay cả sau khi mở, hai ADMIN khóa chéo qua hai kết nối. Chèn lỗi SQLException có chủ ý tại bước session/audit trên connection thật để kiểm chứng rollback. Đã dừng instance tạm, không đổi .env. Test đầu tiên dùng version trước login và bị từ chối đúng vì login thay đổi last_login_at/updated_at; đã lấy version sau login và chạy đạt trên schema test mới.
+- PASS HTTP Tomcat: guest bị chuyển về login tại hai endpoint, POST thiếu/sai CSRF bị 403, home/welcome/CSS/login vẫn hoạt động.
+- NOT RUN: xác nhận end-to-end bằng trình duyệt và phiên thật cho ADMIN/TEACHER/STUDENT ở hai endpoint, thông báo/giữ bộ lọc sau POST, GET 405 và các mã 400/404/409 qua HTTP đã đăng nhập. Khi nghiệm thu dùng DB cô lập và tài khoản riêng; đăng nhập đồng thời ADMIN và user thử ở hai trình duyệt, khóa rồi thử request của user, mở khóa rồi thử lại cookie cũ và đăng nhập mới. Không khóa ba DEV. Không triển khai 2C.
