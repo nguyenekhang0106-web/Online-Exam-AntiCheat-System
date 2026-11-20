@@ -51,6 +51,26 @@ class AcceptAuth {
                 return new State(r.getLong(3),r.getObject(2,LocalDateTime.class));}
         }
     }
+    void directory(String role) throws Exception {
+        var list=send("admin/users",null);
+        if (!role.equals("ADMIN")) {
+            require(list.statusCode()==403,"Directory must deny "+role);
+        } else {
+            require(list.statusCode()==200 && list.body().contains("3 tài khoản phù hợp"),"Directory total");
+            for (String code:List.of("DEV_ADMIN","DEV_TEACHER","DEV_STUDENT"))
+                require(list.body().contains("<td>"+code+"</td>"),"Missing DEV row");
+            require(!Pattern.compile("password_hash|pbkdf2-sha256|session_hash|session_token_hash",Pattern.CASE_INSENSITIVE)
+                    .matcher(list.body()).find(),"Sensitive field in directory");
+            var filtered=send("admin/users?q=dev.teacher&role=TEACHER&status=ACTIVE",null);
+            require(filtered.statusCode()==200 && filtered.body().contains("1 tài khoản phù hợp")
+                    && filtered.body().contains("<td>DEV_TEACHER</td>"),"Combined HTTP filters");
+            var paged=send("admin/users?sort=code&direction=ASC&pageSize=1&page=2",null);
+            require(paged.statusCode()==200 && paged.body().contains("Trang 2 / 3")
+                    && paged.body().contains("<td>DEV_STUDENT</td>")
+                    && !paged.body().contains("<td>DEV_TEACHER</td>") && !paged.body().contains("<td>DEV_ADMIN</td>"),"HTTP pagination");
+        }
+        System.out.println("PASS "+role+" /admin/users");
+    }
     void positive(Connection db,String role) throws Exception {
         String name=role.toLowerCase(Locale.ROOT),email="dev."+name+"@example.invalid",path=name+"/account";
         var before=state(db,email);
@@ -70,6 +90,7 @@ class AcceptAuth {
         }
         var account=send(path,null); require(account.statusCode()==200 && account.body().contains(role),"Role page");
         try {
+            directory(role);
             for(String other:List.of("admin","teacher","student")) if(!name.equals(other))
                 require(send(other+"/account",null).statusCode()==403,"Cross-role access");
         } finally {

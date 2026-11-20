@@ -64,7 +64,7 @@ try {
     Write-Output 'PASS /WEB-INF/views/home.jsp: HTTP 404'
     $login = Invoke-WebRequest "$url/login" -UseBasicParsing -SessionVariable browser
     if ($login.Content -notmatch 'name="csrf" value="[0-9a-f-]{36}"') { throw 'Login CSRF missing' }
-    foreach ($path in 'admin/account','teacher/account','student/account') {
+    foreach ($path in 'admin/account','teacher/account','student/account','admin/users','admin/users/new','admin/users/edit?id=1','admin/users/lock','admin/users/unlock') {
         $guest = Invoke-WebRequest "$url/$path" -WebSession $browser -UseBasicParsing
         if ($guest.BaseResponse.ResponseUri.AbsolutePath -ne '/online-exam/login') { throw "Guest reached $path" }
     }
@@ -75,6 +75,15 @@ try {
         if ($status -ne $case[2]) { throw "Unexpected status $status for $case" }
     }
     Write-Output 'PASS login JSP, guest redirects, logout method and missing CSRF'
+    foreach ($path in 'admin/users/new','admin/users/edit','admin/users/lock','admin/users/unlock') {
+        foreach ($body in @{},@{csrf='invalid'}) {
+            $status = 0
+            try { $null = Invoke-WebRequest "$url/$path" -Method Post -Body $body -WebSession $browser -UseBasicParsing }
+            catch { if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode } else { throw } }
+            if ($status -ne 403) { throw "Expected CSRF denial for $path" }
+        }
+    }
+    Write-Output 'PASS create/edit guest redirects and POST missing/invalid CSRF'
     if ($AuthMysql) {
         $options = @("$Port")
         if ($InteractivePasswords) { $options += 'interactive' }
