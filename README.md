@@ -4,7 +4,7 @@ Hệ thống thi trắc nghiệm trực tuyến tích hợp giám sát gian lậ
 ## Phạm vi nền tảng
 
 Java release 21, Maven WAR, Jakarta Servlet 6.0, JSP, JDBC, MySQL và Tomcat 10.1.
-Hiện chỉ có trang kiểm tra MVC; chưa triển khai đăng nhập, đề thi, giám sát hay kết nối DB.
+Hiện có trang kiểm tra MVC, migration cho 34 bảng và 34 Java Bean; chưa triển khai đăng nhập, đề thi, giám sát hay kết nối DB.
 Không sử dụng Spring. Mở chính thư mục repository bằng VS Code, không tạo project con.
 
 ## Môi trường đã kiểm tra (19/11/2026)
@@ -142,12 +142,27 @@ JSP hiện chỉ hiển thị chuỗi cố định từ server; khi hiển thị
 
 ## Database và secret
 
-Trang kiểm tra không cần database. Chưa tạo schema/user hoặc kiểm thử đăng nhập MySQL.
+Trang kiểm tra không cần database. Đã viết SQL migration và Bean nhưng chưa thực thi tạo schema/user hoặc kiểm thử đăng nhập MySQL.
 Giai đoạn sau thống nhất `DB_URL`, `DB_USER`, `DB_PASSWORD` qua biến môi trường hoặc
 JNDI DataSource của Tomcat. Hiện chưa có code đọc các biến này; file `.env` không tự được Java nạp.
 Để file cấu hình cá nhân ngoài source, ví dụ `config/local/` đã ignore.
 Không đặt mật khẩu vào README, JDBC URL, pom.xml, JSP hay src/main/resources.
 Gitignore không ngăn Maven đóng gói file nhạy cảm nằm trong source và không bỏ theo dõi file đã tracked.
+
+Thiết kế 34 bảng, hướng dẫn migration/seed và các quy tắc transaction/locking:
+[docs/database-design.md](docs/database-design.md).
+ERD: [database/erd/online_exam_erd.md](database/erd/online_exam_erd.md).
+Migration nằm trong `database/migrations/V1__...` đến `V7__...`, không tự chạy khi build/deploy.
+Chỉ chạy SQL trên database thử nghiệm trống sau khi được cho phép.
+Helper `scripts/SeedAccounts.java` sinh SQL tài khoản có hash riêng trong `.local/`, không kết nối DB;
+`PasswordHasher` cung cấp encoder/verifier dùng chung cho Auth Service sau này.
+
+Kiểm tra cấu trúc và Bean sau build (Node.js chỉ cần cho checker, không cần cho ứng dụng Java):
+
+```powershell
+node scripts/verify-database.cjs
+java -cp target/classes scripts/VerifyBeans.java
+```
 
 ## Phân công và quy ước tích hợp
 
