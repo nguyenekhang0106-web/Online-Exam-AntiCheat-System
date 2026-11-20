@@ -27,6 +27,7 @@ th,td{text-align:left;padding:.6rem;border-bottom:1px solid #ddd}caption{text-al
 <thead><tr><th>Mã người dùng</th><th>Họ tên</th><th>Email</th><th>Vai trò</th><th>Trạng thái</th><th>Ngày tạo (UTC)</th><th>Thao tác</th></tr></thead><tbody>
 <% for(var row:d.rows()) { %><tr><td><%=Html.escape(row.code())%></td><td><%=Html.escape(row.name())%></td><td><%=Html.escape(row.email())%></td>
 <td><%=Html.escape(row.roles())%></td><td><%=Html.escape(row.status())%></td><td><%=Html.escape(row.created())%></td><td><a href="users/edit?id=<%=row.id()%>">Sửa</a>
+<a href="users/roles?id=<%=row.id()%>">Vai trò</a>
 <% boolean lock="ACTIVE".equals(row.status());
    var actor=(vn.edu.onlineexam.model.AuthUser)request.getAttribute("authenticatedUser");
    if ((lock && actor.id()!=row.id()) || "LOCKED".equals(row.status())) { %>

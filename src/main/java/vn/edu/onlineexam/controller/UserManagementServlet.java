@@ -9,7 +9,7 @@ import vn.edu.onlineexam.model.AuthUser;
 import vn.edu.onlineexam.service.*;
 import vn.edu.onlineexam.util.ConnectionFactory;
 
-@WebServlet({"/admin/users","/admin/users/new","/admin/users/edit","/admin/users/lock","/admin/users/unlock"})
+@WebServlet({"/admin/users","/admin/users/new","/admin/users/edit","/admin/users/lock","/admin/users/unlock","/admin/users/roles"})
 public final class UserManagementServlet extends HttpServlet {
     private final UserManagementService users = new UserManagementService(
             new JdbcUnitOfWork(() -> ConnectionFactory.fromEnvironment().open()));
@@ -18,6 +18,11 @@ public final class UserManagementServlet extends HttpServlet {
         try {
             var actor=(AuthUser)req.getAttribute("authenticatedUser");
             UserManagementService.requireAdmin(actor);
+            if (req.getServletPath().equals("/admin/users/roles")) {
+                req.setAttribute("membership", users.membership(actor, id(req)));
+                req.getRequestDispatcher("/WEB-INF/views/admin/user-roles.jsp").forward(req, res);
+                return;
+            }
             if(statusRoute(req)) { res.setHeader("Allow","POST"); res.sendError(405); return; }
             if (!req.getServletPath().equals("/admin/users")) {
                 if (req.getServletPath().endsWith("/edit")) {
@@ -53,6 +58,10 @@ public final class UserManagementServlet extends HttpServlet {
     }
     protected void doPost(HttpServletRequest req,HttpServletResponse res) throws ServletException,IOException {
         res.setHeader("Cache-Control","no-store");
+        if (req.getServletPath().equals("/admin/users/roles")) {
+            changeRole(req, res);
+            return;
+        }
         if(statusRoute(req)) { changeStatus(req,res); return; }
         boolean create=req.getServletPath().endsWith("/new");
         if(!create && !req.getServletPath().endsWith("/edit")) { res.sendError(405); return; }
@@ -76,6 +85,29 @@ public final class UserManagementServlet extends HttpServlet {
             req.setAttribute("error",e.getMessage()); showForm(req,res);
         } catch (SQLException | IllegalStateException e) { res.sendError(503); }
     }
+    private void changeRole(HttpServletRequest req, HttpServletResponse res) throws IOException {
+        try {
+            var actor = (AuthUser) req.getAttribute("authenticatedUser");
+            UserManagementService.requireAdmin(actor);
+            String action = req.getParameter("action"), code = req.getParameter("role");
+            boolean grant = "grant".equals(action);
+            if (!grant && !"revoke".equals(action)) throw new IllegalArgumentException("Thao tác không hợp lệ.");
+            if (!grant && "ADMIN".equals(code) && !"yes".equals(req.getParameter("confirm")))
+                throw new IllegalArgumentException("Cần xác nhận thu hồi quyền ADMIN.");
+            long target = id(req);
+            var session = req.getSession(false);
+            users.changeRole(actor, (String) session.getAttribute("sessionRef"), target, code, grant);
+            session.setAttribute("statusMessage", grant ? "Đã cấp vai trò. Tài khoản cần đăng nhập lại."
+                    : "Đã thu hồi vai trò và các phiên đăng nhập.");
+            res.setStatus(303);
+            res.setHeader("Location", req.getContextPath() + "/admin/users");
+        } catch (SecurityException e) { res.sendError(403); }
+        catch (java.util.NoSuchElementException e) { res.sendError(404, "Không tìm thấy tài khoản hoặc vai trò."); }
+        catch (IllegalArgumentException e) { res.sendError(400, e.getMessage()); }
+        catch (UserManagementService.Conflict e) { res.sendError(409, e.getMessage()); }
+        catch (SQLException | IllegalStateException e) { res.sendError(503); }
+    }
+
     private char[] chars(HttpServletRequest req,String key) {
         String value=req.getParameter(key); return value==null ? new char[0] : value.toCharArray();
     }
