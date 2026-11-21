@@ -11,7 +11,7 @@
 | 4 · Đề và phân công | PARTIAL | Đã triển khai cấu hình, biên soạn và lịch thi. Xem biên bản giai đoạn 4 bên dưới. |
 | 5 · Làm bài | PARTIAL | Đã tích hợp cấp lượt, snapshot, autosave, nộp và hết giờ. Hai quyết định về quyền dự thi còn mở. |
 | 6 · Kết quả | PARTIAL | Đã tích hợp chấm ALL_OR_NOTHING và xem điểm vào luồng nộp của giai đoạn 5. Công bố MANUAL và điều chỉnh điểm chưa triển khai. |
-| 7 · Giám sát | Chưa triển khai | Retry event không nhân đôi, kiểm tra quyền tải evidence, lưu reviewer và lý do. |
+| 7 · Giám sát | PARTIAL · nền tảng 7A | Retry event không nhân đôi, kiểm tra quyền tải evidence, lưu reviewer và lý do. |
 | 8 · Phúc khảo và báo cáo | Chưa triển khai | Đơn đúng chủ lượt, thông báo đúng người, báo cáo khớp policy chọn lượt. |
 
 Ở mỗi giai đoạn, ghi ngày, người phụ trách, file thay đổi, lệnh test, kết quả thực tế và quyết định còn mở trước khi chuyển trạng thái. Lần rà soát giai đoạn 0 chỉ chạy checker tĩnh. Kết quả WAR/Tomcat trước đó thuộc [báo cáo nền tảng](verification.md). Migration và seed chưa được chạy trong giai đoạn 0.
@@ -317,3 +317,64 @@ V8 thêm exams.selection_mode và exams.question_count. Đề có trước V8 nh
 - PASS từ chối rút 0, rút 51/50 và nguồn khác trọng số. Chèn lỗi ghi attempt_questions hoặc audit làm rollback toàn bộ. Lựa chọn của câu không được cấp bị từ chối. Một câu đúng trong 40 câu đồng điểm cho kết quả 1/40, nộp lặp giữ nguyên kết quả. Đăng nhập lại tiếp tục đúng tập và thứ tự; Edge thật xác minh mất mạng, retry autosave, reload và xác nhận nộp trên lượt ngẫu nhiên.
 - PASS hồi quy giai đoạn 4 và 5 gồm VerifyExams, VerifyAttempts, bộ role/học vụ/ngân hàng, thu hồi phiên, transaction và audit. PASS Edge 390/1280 px trên 4 trang quản lý/lịch và 4 trang lượt thi. NOT RUN thiết bị cảm ứng vật lý và tải lớn. Các blocker trước đây của 5A/5C giữ nguyên.
 - Chạy lại bằng suite -AttemptMysql với schema scratch rỗng V1–V8 theo hướng dẫn giai đoạn 5; đặt ATTEMPT_BROWSER=1 để kiểm thử mất mạng trong Edge. Dùng schema rỗng riêng cho -ExamMysql.
+
+## Giai đoạn 7 · Giám sát và review — phần 7A
+
+**Gửi tín hiệu.** POST /online-exam/student/proctoring/events, Content-Type application/x-www-form-urlencoded, tối đa 1024 byte, Content-Length xác định. Form chỉ có csrf (từ phiên), attempt (ID lượt), key (UUID dạng chuẩn chữ thường), code và occurred tùy chọn (UTC kết thúc bằng Z, tối đa mili giây). Ví dụ trong client thử của sinh viên đã đăng nhập: gửi csrf từ form của phiên, ID lượt đang mở, UUID mới và code=CONNECTION_RESTORED. Giữ cùng UUID, loại và thời gian khai báo nếu retry. 201 là đã ghi; 204 là đã nhận trước đó. Cùng khóa nhưng nội dung khác trả 409. Body sai 400, sai CSRF 403, sai chủ hoặc không có lượt 404, quá kích thước 413, quá hạn mức 429. Lỗi database trả 503. Giao diện làm bài không tự gửi tín hiệu.
+
+**Nguồn và policy.** V4 lưu mẫu proctoring_policies và policy_snapshot_json trên đề; cấu hình áp dụng là snapshot khi publish, không có override giám sát riêng trên assignment. 7A đọc warn_on_focus_loss cho TAB_HIDDEN/WINDOW_BLUR, require_fullscreen cho FULLSCREEN_EXIT, detect_paste cho PASTE_ATTEMPT. CONNECTION_LOST và CONNECTION_RESTORED là tín hiệu client được phép ghi INFO. Các ngưỡng max_tab_switches, max_fullscreen_exits, max_parallel_sessions và cờ camera thuộc snapshot hiện có; chưa dùng chúng để cảnh báo hoặc xử phạt. detail_json chỉ ghi source=BROWSER do server gán. Thời điểm server nhận là UTC của MySQL; client_occurred_at chỉ là khai báo. Chưa có detector, ghi nội dung clipboard hoặc mã thu webcam.
+
+**Liên kết và trạng thái.** V6 có FK proctoring_events.attempt_id → exam_attempts. Từ lượt lấy được student_id và exam_id; không nhận các giá trị đó từ client. attempt_session_id là FK tùy chọn, để NULL khi chưa mở phiên giám sát thiết bị. Phiên đăng nhập được kiểm tra lại qua login_sessions/users và vai trò trong transaction. Lượt được khóa cùng hàng với submit. Chỉ thêm tín hiệu mới khi IN_PROGRESS và trong hạn; retry bản ghi đã có không thay đổi lịch sử. Các sự kiện đến muộn chưa có quy tắc tiếp nhận bù. Không ghi bản sao sự kiện vào audit_logs. Sự kiện, proctoring_evidence và quyết định violation_reviews là ba đối tượng khác nhau. Trạng thái đã xem xét dựa vào review liên kết trực tiếp với event.
+
+**Giới hạn.** Khóa hàng lượt + UNIQUE(attempt_id,client_event_id) chống trùng xuyên node. UUID thuộc phạm vi một lượt; cùng UUID ở lượt khác không phải quyền truy cập. Khóa/quota dùng index (attempt_id,server_received_at); tối đa 30 bản ghi mới mỗi phút cho mỗi lượt. Trước khi gọi JDBC, mỗi node giới hạn 4 POST đồng thời và tối đa 120 request/phút theo phiên. Đây là giới hạn vận hành ban đầu, không phải điểm nghi vấn. Lớp chống tải trong JVM không phải bộ giới hạn request toàn cụm. Retry cùng bản ghi không tiêu tốn quota insert.
+
+**Tra cứu.** GET /online-exam/teacher/proctoring/events và /online-exam/admin/proctoring/events. Cả hai truy vấn theo exams.created_by của người đăng nhập. ADMIN ngoài phạm vi đó cần cơ chế giao nhiệm vụ được duyệt. Tham số tùy chọn: id, attempt, student, code, from, until, sort (oldest/newest), page, size (1–50, mặc định 20); lọc thời gian server theo [from,until). Tổng số và dữ liệu có cùng giới hạn quyền. GET không ghi review hoặc thay đổi bài thi. Index V6 đủ cho tra cứu theo lượt; truy vấn rộng theo thời gian/loại cần đo tải trước khi đề xuất index mới.
+
+**File.** ProctoringEventDao.java (Filter và Page), ProctoringService.java, ProctoringEventServlet.java, AuthenticationFilter.java, WEB-INF/views/proctoring/events.jsp, account.jsp, scripts/VerifyAttempts.java, scripts/verify-exam-layout.ps1 và tài liệu này. V1–V8 và Java Bean giữ nguyên.
+
+**Kiểm thử độc lập.** Build WAR bằng Maven Wrapper clean package. Với schema role_test_<32 hex> rỗng V1–V8 trên MySQL riêng 127.0.0.1:13367, đặt DB_URL/DB_USER/DB_PASSWORD và JAVA_HOME trong tiến trình thử. Chạy scripts/smoke-test.ps1 -TomcatHome <Tomcat10.1> -Port <cổng trống> -AttemptMysql, sau đó scripts/verify-exam-layout.ps1 -Attempts. Hồi quy -ExamMysql dùng schema scratch rỗng khác. Đối với dev, đã SELECT information_schema xác nhận có hai cột V8 của exams; phép kiểm tra này không chứng minh toàn bộ lịch sử migration.
+
+
+Ví dụ thao tác thủ công trên trang làm bài của sinh viên trong môi trường test. Chạy cùng đoạn gửi hai lần với cùng giá trị body để kiểm tra 201 rồi 204. Chỉ in mã HTTP.
+
+```javascript
+const body = new URLSearchParams({
+    attempt: new URL(location.href).searchParams.get("id"),
+    csrf: document.querySelector('input[name="csrf"]').value,
+    key: crypto.randomUUID(),
+    code: "CONNECTION_RESTORED",
+    occurred: new Date().toISOString()
+});
+const send = () => fetch("proctoring/events", {method: "POST", body});
+console.log((await send()).status, (await send()).status);
+```
+
+
+**Nghiệm thu 7A · COMPLETED trong phạm vi nền tảng.** Maven Wrapper clean package PASS (Java release 21). Các bài JDBC/HTTP chạy riêng với Surefire. PASS MySQL 9.6 scratch cổng 13367, Tomcat 10.1 cổng 18085: hai phiên cùng gửi một UUID trả 201/204; retry giữ một dòng; tái dùng khóa với nội dung khác trả 409. Đã thử thời gian UTC client, snapshot bật/tắt paste, thiếu ID, sai chủ, sai mã, CSRF, trường ngoài allowlist và body lớn. Giữ lại đúng 30 bản ghi khi vượt hạn mức, kể cả khi đổi phiên. Gửi lặp bản ghi đã có chạm hạn mức request. Trigger gây lỗi ghi trả 503 và không để lại sự kiện. Lượt đã nộp/hết giờ, tài khoản khóa, phiên hết hạn và vai trò thu hồi đều bị chặn. Khi request đang đợi, transaction thu hồi phiên commit trước thì request bị từ chối. Khi submit cạnh tranh với event, event chỉ thành công nếu được tiếp nhận khi lượt còn mở.
+
+PASS tra cứu đúng chủ đề, lọc theo loại/thời gian, đếm/phân trang và giới hạn ADMIN. PASS Edge headless cho lịch sử tại 390/1280 px. PASS VerifyAuth, VerifyJdbcTransaction, suite role/học vụ/ngân hàng, VerifyExams, VerifyAttempts, hai chế độ 40/50, autosave offline/reload qua Edge, submit và chấm hết giờ. Truy vấn dùng bind parameter; JSP escape nội dung động. NOT RUN benchmark phân tán nhiều Tomcat node, tải sản xuất, thiết bị cảm ứng vật lý, kiểm toán bảo mật độc lập. Chưa có chính sách retention/xóa, quyền evidence, tiếp nhận bù sau deadline, xử phạt hoặc cấp nhiệm vụ ADMIN ngoài phạm vi chủ đề. Các quyết định đó thuộc giai đoạn sau.
+
+### 7B · Giám sát trình duyệt trên trang làm bài
+
+Trang `attempt/take.jsp` khởi động `assets/js/browser-proctoring.js` khi lượt còn IN_PROGRESS. `AttemptDao` và `AttemptService.Paper` truyền ba cờ chính sách từ snapshot của đề. `visibilitychange` theo dõi trạng thái hidden, `blur/focus` theo dõi cửa sổ còn hiển thị, `requestFullscreen`, `fullscreenElement` và `fullscreenchange` phân biệt vào và thoát toàn màn hình. Listener copy/paste giới hạn trong câu hỏi. Copy được ghi nhận trên trang làm bài, paste phụ thuộc detect_paste. Nút toàn màn hình cần thao tác của sinh viên. Khi API bị từ chối hoặc không được hỗ trợ, sinh viên vẫn tiếp tục làm bài.
+
+Năm mã TAB_HIDDEN, WINDOW_BLUR, FULLSCREEN_EXIT, COPY_ATTEMPT và PASTE_ATTEMPT đi qua POST /student/proctoring/events → ProctoringEventServlet → ProctoringService → ProctoringEventDao → proctoring_events. Client gửi mã, UUID, thời gian quan sát, ID lượt và CSRF. Server kiểm tra phiên, quyền sở hữu lượt, policy và deadline theo giờ server. Trang teacher/proctoring/events hiển thị diễn giải, lượt, sinh viên và giờ server trong phạm vi đề của giáo viên.
+
+Browser trì hoãn blur 350 ms và bỏ blur nếu tab đã ẩn hoặc đã lấy lại focus. Chỉ ghi nhận thay đổi trạng thái, debounce cùng mã 1,5 giây và cách hai lần gửi ít nhất 2,2 giây. Queue trong RAM giữ tối đa 20 sự kiện. Khi offline, chờ online để gửi cùng UUID và thời gian ban đầu. 201/204 lấy sự kiện khỏi queue, 429 chờ ít nhất 60 giây, lỗi mạng/5xx retry có backoff, lỗi quyền/xung đột dừng gửi. Reload, rời trang và hết giờ có thể làm mất tín hiệu chưa gửi. Autosave và nộp bài độc lập với queue. Chỉ quan sát tín hiệu trình duyệt cung cấp; chuyển ứng dụng hợp lệ cũng có thể gây blur. Không thu clipboard, phím gõ hoặc đáp án qua kênh này. Các tín hiệu chỉ phục vụ tra cứu và không tham gia tính điểm.
+
+Các file 7B gồm AttemptDao.java, AttemptService.java, ProctoringService.java, attempt/take.jsp, proctoring/events.jsp, assets/js/attempt.js, assets/js/browser-proctoring.js, scripts/VerifyAttempts.java, scripts/verify-attempt-browser.mjs và tài liệu tiến độ này.
+
+| Trường hợp nghiệm thu | Kết quả | Bằng chứng |
+|---|---|---|
+| Build Java 21 và đóng gói WAR | PASS | Maven Wrapper clean package; các bài tích hợp chạy riêng với Surefire. |
+| Ẩn và quay lại tab, thoát fullscreen, copy vùng chữ câu hỏi | PASS | Edge headless mở tab thứ hai, thoát fullscreen qua Browser API và gọi lệnh copy với vùng chọn. API tiếp nhận qua HTTP. |
+| Paste trong câu hỏi, blur lặp, fullscreen không được hỗ trợ | PASS | Phát DOM event trong Edge; gửi 20 blur liên tiếp; mô phỏng fullscreenEnabled=false sau reload. |
+| Ghi đúng lượt, CSRF thiếu/sai, truy cập lượt người khác, lịch sử giáo viên | PASS | Tomcat 10.1 và MySQL scratch. SELECT xác minh cả năm mã theo attempt_id. |
+| Retry đồng thời, khác payload, hạn mức, lỗi ghi | PASS | HTTP 201/204, 409, 429 và 503; kiểm tra số dòng và rollback qua JDBC. |
+| Offline và online, reload, autosave, API giám sát chậm | PASS | Edge nhận lại sự kiện paste sau reconnect, khôi phục đáp án, lưu và chuyển trang xác nhận trong khi request giám sát bị giữ bằng CDP. |
+| FIXED và RANDOM_PER_ATTEMPT 40/50 | PASS | Hai sinh viên độc lập, đối chiếu snapshot và điểm trong MySQL. |
+| Thiết bị vật lý, clipboard hệ điều hành cho thao tác paste, Alt+Tab cấp hệ điều hành, trình đọc màn hình | NOT RUN | Viewport và DOM event trong trình duyệt headless chỉ kiểm tra được phần hành vi web. |
+| Thu hồi phiên, nộp bài, hết giờ và chấm điểm | PASS | VerifyAttempts kiểm tra hết phiên/thu hồi, tranh chấp đồng thời, auto-submit, chặn sự kiện mới sau khi lượt kết thúc và điểm thực nhận. |
+| Responsive 390/1280 px | PASS | Edge kiểm tra chiều rộng trang làm bài trực tiếp và năm trang start/take/confirm/history/events. |
+
+**7B COMPLETED** trên MySQL cô lập cổng 13367, Tomcat 10.1 cổng 18085 và Edge headless. Hàng đợi là best effort trên từng trang. Trình duyệt chỉ thấy các thao tác bên trong phạm vi Browser API; kết quả không xác định ý định của sinh viên.
