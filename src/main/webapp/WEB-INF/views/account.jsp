@@ -13,6 +13,7 @@
 <nav aria-label="Ngân hàng câu hỏi"><a href="topics">Chủ đề</a> · <a href="banks">Ngân hàng câu hỏi</a> · <a href="questions">Câu hỏi</a></nav>
 <% } %>
 <% if ("ADMIN".equals(request.getAttribute("roleLabel"))) { %><p><a href="users">Quản lý người dùng</a></p><% } %>
+<% if ("STUDENT".equals(request.getAttribute("roleLabel"))) { %><p><a href="schedule">Lịch thi của tôi</a></p><% } else { %><p><a href="exams">Đề và phân công thi</a></p><% } %>
 <form method="post" action="../logout">
     <input type="hidden" name="csrf" value="${sessionScope.csrf}">
     <button>Đăng xuất</button>

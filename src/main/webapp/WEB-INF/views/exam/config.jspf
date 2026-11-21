@@ -1,0 +1,16 @@
+<%@ page pageEncoding="UTF-8" %>
+<label>Tên đề <input name="title" required maxlength="200" value="<%=escape(e.getOrDefault("title",""))%>"></label>
+<label>Thời lượng (phút) <input name="duration" type="number" required min="1" max="32767" value="<%=e.getOrDefault("duration_minutes",45)%>"></label>
+<label>Số lượt tối đa <input name="attempts" type="number" required min="1" max="32767" value="<%=e.getOrDefault("max_attempts",1)%>"></label>
+<label>Điểm đạt (%) <input name="pass" type="number" required min="0" max="100" step=".01" value="<%=e.getOrDefault("pass_percentage",50)%>"></label>
+
+<label>Hướng dẫn <textarea name="instructions"><%=escape(Objects.toString(e.get("instructions"),""))%></textarea></label>
+<label><input type="checkbox" name="shuffleQuestions" <%=Set.of("true","1").contains(String.valueOf(e.get("shuffle_questions")))?"checked":""%>> Trộn câu hỏi</label>
+<label><input type="checkbox" name="shuffleOptions" <%=Set.of("true","1").contains(String.valueOf(e.get("shuffle_options")))?"checked":""%>> Trộn lựa chọn</label>
+<label>Chọn điểm từ các lượt <select name="scorePolicy"><% for(String option:List.of("HIGHEST","LATEST","FIRST")){ %><option <%=option.equals(e.get("attempt_score_policy"))?"selected":""%>><%=option%></option><% } %></select></label>
+<label>Công bố kết quả <select name="resultRelease"><% for(String option:List.of("MANUAL","IMMEDIATE","AFTER_CLOSE")){ %><option <%=option.equals(e.get("result_release_mode"))?"selected":""%>><%=option%></option><% } %></select></label>
+<label>Công bố đáp án <select name="answerRelease"><% for(String option:List.of("NEVER","AFTER_CLOSE","MANUAL")){ %><option <%=option.equals(e.get("answer_release_mode"))?"selected":""%>><%=option%></option><% } %></select></label>
+<label>Mẫu quy định thi <select name="policy"><option value="">Không áp dụng mẫu</option>
+<% Object currentPolicy=e.get("policy_id"); var policies=(List<Map<String,Object>>)request.getAttribute("policies");
+if(currentPolicy!=null && policies.stream().noneMatch(row->currentPolicy.equals(row.get("id")))){ %><option selected value="<%=currentPolicy%>">Giữ mẫu hiện tại #<%=currentPolicy%></option><% }
+for(var policy:policies){ %><option value="<%=policy.get("id")%>" <%=Objects.equals(currentPolicy,policy.get("id"))?"selected":""%>><%=escape(policy.get("policy_name"))%></option><% } %></select></label>

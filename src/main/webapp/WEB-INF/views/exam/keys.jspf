@@ -1,0 +1,2 @@
+<%@ page pageEncoding="UTF-8" %>
+<input type="hidden" name="csrf" value="${sessionScope.csrf}"><input type="hidden" name="id" value="<%=e.get("id")%>"><input type="hidden" name="stamp" value="<%=e.get("stamp")%>">

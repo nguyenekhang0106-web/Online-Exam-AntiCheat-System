@@ -1,0 +1,5 @@
+<%@ page pageEncoding="UTF-8" %>
+<% var schedule=(List<Map<String,Object>>)request.getAttribute("schedule"); if(schedule.isEmpty()){ %><p>Chưa có lịch thi.</p><% } for(var slot:schedule){ %>
+<article><strong><%=escape(slot.get("title"))%></strong> · <%="COURSE".equals(slot.get("scope"))?"Lớp học phần":"Cá nhân"%> #<%=slot.get("target")%><br>
+<%=escape(slot.get("opens_at"))%> – <%=escape(slot.get("closes_at"))%> UTC · <%=escape(slot.get("window_state"))%><br>
+Giới hạn của đề: <%=slot.get("max_attempts")%> lượt. Ghi đè của phân công: <%=escape(slot.get("max_attempts_override"))%>.</article><% } %>

@@ -1,0 +1,22 @@
+<%@ page pageEncoding="UTF-8" %>
+<%@ include file="header.jspf" %>
+<% var detail=(ExamService.Detail)request.getAttribute("detail");var e=detail.exam();boolean teacher="TEACHER".equals(request.getAttribute("roleLabel"));
+boolean draft=teacher && "DRAFT".equals(e.get("status")),published=teacher && "PUBLISHED".equals(e.get("status")); %>
+<p><a href="exams">Danh sách đề</a></p><h1><%=escape(e.get("title"))%></h1>
+<p><%=escape(e.get("subject_name"))%> · <%=escape(e.get("status"))%> · <%=e.get("duration_minutes")%> phút · <%=e.get("max_attempts")%> lượt · Điểm đạt <%=e.get("pass_percentage")%>%</p>
+<% if(draft){ %><form method="post"><fieldset><legend>Sửa cấu hình</legend><%@ include file="keys.jspf" %><%@ include file="config.jspf" %><button name="action" value="edit">Lưu cấu hình</button></fieldset></form><% } %>
+<% if(teacher){ BigDecimal total=BigDecimal.ZERO; %><h2>Nội dung đề</h2>
+<% for(var item:detail.items()){total=total.add((BigDecimal)item.get("points")); %><article><strong>Câu ở vị trí <%=item.get("fixed_order")%></strong> · phiên bản <%=item.get("version_no")%> · <%=item.get("points")%> điểm<p><%=escape(item.get("content"))%></p>
+<% if(draft){ %><form method="post"><%@ include file="keys.jspf" %><input type="hidden" name="version" value="<%=item.get("question_version_id")%>"><label>Thứ tự <input type="number" name="position" min="0" required value="<%=item.get("fixed_order")%>"></label><label>Điểm <input type="number" step=".01" min="0" max="99999.99" required name="points" value="<%=item.get("points")%>"></label><button name="action" value="revise">Lưu câu</button><button name="action" value="remove" formnovalidate>Loại khỏi đề</button></form><% } %></article><% } %>
+<p><%=detail.items().size()%> câu · Tổng <%=total%> điểm.</p>
+<% if(draft){ %><h3>Chọn câu đã công bố</h3><form><input type="hidden" name="id" value="<%=e.get("id")%>"><label>Ngân hàng <input name="bank"></label><label>Chủ đề <input name="topic"></label><label>Độ khó <select name="difficulty"><option value="">Tất cả</option><option>EASY</option><option>MEDIUM</option><option>HARD</option></select></label><button>Lọc</button></form>
+<form method="post"><%@ include file="keys.jspf" %><label>Câu hỏi <select required name="version"><% for(var v:detail.choices()){ %><option value="<%=v.get("id")%>"><%=escape(v.get("bank_name"))%> · <%=escape(v.get("content"))%></option><% } %></select></label>
+<label>Thứ tự <input required type="number" min="0" name="position"></label><label>Điểm <input required type="number" min="0" max="99999.99" step=".01" name="points"></label><button name="action" value="add">Thêm vào đề</button></form>
+<% if(total.signum()==0){ %><p>Để công bố, đề cần có câu hỏi hợp lệ và tổng điểm lớn hơn 0.</p><% } %><% } %>
+<% if(!"ARCHIVED".equals(e.get("status"))){ %><form method="post"><%@ include file="keys.jspf" %><button name="action" value="<%=draft?"PUBLISHED":published?"CLOSED":"ARCHIVED"%>"><%=draft?"Công bố đề":published?"Đóng đề":"Lưu trữ đề"%></button></form><% } } %>
+<h2>Phân công thi</h2><%@ include file="calendar.jspf" %>
+<% if(published){ for(var scope:List.of("COURSE","STUDENT")){ var targets=scope.equals("COURSE")?detail.courses():detail.students(); %>
+<form method="post"><fieldset><legend><%=scope.equals("COURSE")?"Phân công lớp học phần":"Phân công cá nhân"%></legend><%@ include file="keys.jspf" %><input type="hidden" name="scope" value="<%=scope%>">
+<label>Đối tượng <select name="target" required><% for(var target:targets){ %><option value="<%=target.get("id")%>"><%=escape(target.get("label"))%> (#<%=target.get("id")%>)</option><% } %></select></label>
+<label>Mở (UTC) <input name="opens" type="datetime-local" required></label><label>Đóng (UTC) <input name="closes" type="datetime-local" required></label><label>Ghi đè số lượt <input type="number" min="1" max="32767" name="limit"></label>
+<button name="action" value="assign">Tạo lịch</button><button name="action" value="reschedule">Cập nhật lịch</button></fieldset></form><% } for(var slot:detail.schedule()){ %><form method="post"><%@ include file="keys.jspf" %><input type="hidden" name="scope" value="<%=slot.get("scope")%>"><input type="hidden" name="target" value="<%=slot.get("target")%>"><button name="action" value="cancel">Thu hồi lịch <%=slot.get("scope")%> #<%=slot.get("target")%></button></form><% } } %></main></body></html>
