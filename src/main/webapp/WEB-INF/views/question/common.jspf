@@ -1,0 +1,6 @@
+<%@ page pageEncoding="UTF-8" import="java.util.*,vn.edu.onlineexam.model.QuestionCatalog.*,vn.edu.onlineexam.util.Html" %>
+<%! String h(Object o){return o==null?"":Html.escape(o);} %>
+<% String module=(String)request.getAttribute("module"),base=h(request.getAttribute("base"));
+boolean topics=module.equals("topics"),banks=module.equals("banks"),questions=module.equals("questions"),manage=Boolean.TRUE.equals(request.getAttribute("manage"));
+String title=topics?"Chủ đề":banks?"Ngân hàng câu hỏi":"Câu hỏi",root=h(request.getContextPath());
+%>
