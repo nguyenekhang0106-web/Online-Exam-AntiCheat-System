@@ -4,6 +4,10 @@
     [switch]$AuthMysql,
     [switch]$RoleMysql,
     [switch]$SubjectMysql,
+    [switch]$OfferingMysql,
+    [switch]$EnrollmentMysql,
+    [switch]$ClassMysql,
+    [switch]$CatalogMysql,
     [switch]$InteractivePasswords
 )
 $ErrorActionPreference = 'Stop'
@@ -86,14 +90,19 @@ try {
         }
     }
     Write-Output 'PASS create/edit guest redirects and POST missing/invalid CSRF'
-    if ($RoleMysql -or $SubjectMysql) {
+    if ($RoleMysql -or $SubjectMysql -or $OfferingMysql -or $EnrollmentMysql -or $ClassMysql -or $CatalogMysql) {
         $classes = Join-Path $root 'target/role-check'
         New-Item -ItemType Directory -Force $classes | Out-Null
         $cp = "$root/target/classes;$root/target/online-exam/WEB-INF/lib/*;$classes"
-        & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -cp $cp -d $classes "$root/scripts/VerifyRoles.java" "$root/scripts/AcceptAuth.java" "$root/scripts/VerifySubjects.java"
+        & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -cp $cp -d $classes "$root/scripts/VerifyRoles.java" "$root/scripts/AcceptAuth.java" "$root/scripts/VerifySubjects.java" "$root/scripts/VerifyOfferings.java" "$root/scripts/VerifyEnrollments.java" "$root/scripts/VerifyClasses.java" "$root/scripts/VerifyQuestionCatalog.java"
         if ($LASTEXITCODE) { throw 'Role test compilation failed' }
-        $suite = if ($SubjectMysql) { 'VerifySubjects' } else { 'VerifyRoles' }
-        & "$env:JAVA_HOME/bin/java.exe" -cp $cp $suite $Port
+        $suite = if ($SubjectMysql -or $OfferingMysql -or $EnrollmentMysql -or $ClassMysql -or $CatalogMysql) { 'VerifySubjects' } else { 'VerifyRoles' }
+        $options = @("$Port")
+        if ($CatalogMysql) { $options += 'catalog' }
+        elseif ($ClassMysql) { $options += 'classes' }
+        elseif ($EnrollmentMysql) { $options += 'enrollments' }
+        elseif ($OfferingMysql) { $options += 'offerings' }
+        & "$env:JAVA_HOME/bin/java.exe" -cp $cp $suite @options
         if ($LASTEXITCODE) { throw 'Role acceptance failed' }
     }
     if ($AuthMysql) {

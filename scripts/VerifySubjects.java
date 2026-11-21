@@ -104,5 +104,13 @@ class VerifySubjects {
             r.next();check(r.getLong(1)==4,"audit only successful mutations");
         }
         System.out.println("PASS subjects on isolated MySQL and Tomcat HTTP: scoped reads, forms, validation, CSRF, unique, search, paging, concurrent edits, archive, audit");
+        boolean catalog=args.length>1 && args[1].equals("catalog");
+        boolean classes=catalog || (args.length>1 && args[1].equals("classes"));
+        if(args.length>1 && (args[1].equals("offerings") || args[1].equals("enrollments") || classes))
+            VerifyOfferings.run(admin,t,s,id,unused,teacher,actor,sessionRef,factory);
+        if(classes || (args.length>1 && args[1].equals("enrollments")))
+            VerifyEnrollments.run(admin,t,s,teacher,student,actor,sessionRef,factory);
+        if(classes) VerifyClasses.run(admin,t,s,student,actor,sessionRef,factory);
+        if(catalog) VerifyQuestionCatalog.run(admin,t,s,id,unused,teacher, factory);
     }
 }
