@@ -111,6 +111,7 @@ class VerifySubjects {
         if(classes || (args.length>1 && args[1].equals("enrollments")))
             VerifyEnrollments.run(admin,t,s,teacher,student,actor,sessionRef,factory);
         if(classes) VerifyClasses.run(admin,t,s,student,actor,sessionRef,factory);
+        if(args.length>2 && args[2].equals("exams")) VerifyExams.run(admin,t,s,teacher,student,factory);
         if(catalog) VerifyQuestionCatalog.run(admin,t,s,id,unused,teacher, factory);
     }
 }
