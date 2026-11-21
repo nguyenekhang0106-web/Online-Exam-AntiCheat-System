@@ -20,6 +20,7 @@ public final class ProctoringEventServlet extends HttpServlet {
     private static Access access(HttpServletRequest r){
         return new Access((AuthUser)r.getAttribute("authenticatedUser"),(String)r.getAttribute("roleLabel"),(String)r.getSession(false).getAttribute("sessionRef"));
     }
+    private static String blank(HttpServletRequest r,String key){String v=r.getParameter(key);return v==null || v.isBlank()?null:v;}
     private static Long id(HttpServletRequest r,String key){
         String value=r.getParameter(key);if(value==null || value.isBlank())return null;
         long n=Long.parseLong(value);if(n<1)throw new IllegalArgumentException();return n;
@@ -49,7 +50,7 @@ public final class ProctoringEventServlet extends HttpServlet {
         try{
             String sort=Objects.requireNonNullElse(r.getParameter("sort"),"newest");
             if(!Set.of("oldest","newest").contains(sort))throw new IllegalArgumentException();
-            var f=new Filter(id(r,"id"),id(r,"attempt"),id(r,"student"),r.getParameter("code"),time(r.getParameter("from")),time(r.getParameter("until")),
+            var f=new Filter(id(r,"id"),id(r,"attempt"),id(r,"student"),blank(r,"code"),blank(r,"source"),time(r.getParameter("from")),time(r.getParameter("until")),
                     Integer.parseInt(Objects.requireNonNullElse(r.getParameter("page"),"1")),Integer.parseInt(Objects.requireNonNullElse(r.getParameter("size"),"20")),sort.equals("oldest"));
             r.setAttribute("result",service.history(access(r),f));
             r.getRequestDispatcher("/WEB-INF/views/proctoring/events.jsp").forward(r,s);

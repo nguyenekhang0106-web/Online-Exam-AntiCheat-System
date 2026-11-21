@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 public final class ProctoringEventDao extends QuestionCatalogDao {
-    public record Filter(Long id,Long attempt,Long student,String code,LocalDateTime from,LocalDateTime until,int page,int size,boolean oldest){}
+    public record Filter(Long id,Long attempt,Long student,String code,String source,LocalDateTime from,LocalDateTime until,int page,int size,boolean oldest){}
     public record Page(long count,List<Map<String,Object>> rows){}
     public Map<String,Object> lock(Connection c,long attempt,long student)throws SQLException{
         return one(c,"""
@@ -33,8 +33,8 @@ public final class ProctoringEventDao extends QuestionCatalogDao {
     public Page history(Connection c,long owner,Filter f)throws SQLException{
         var where=new StringBuilder(" FROM proctoring_events p JOIN exam_attempts a ON a.id=p.attempt_id JOIN exams e ON e.id=a.exam_id WHERE e.created_by=?");
         var args=new ArrayList<Object>();args.add(owner);
-        Object[] values={f.id,f.attempt,f.student,f.code,f.from,f.until};
-        String[] clauses={"p.id=?","a.id=?","a.student_id=?","p.event_code=?","p.server_received_at>=?","p.server_received_at<?"};
+        Object[] values={f.id,f.attempt,f.student,f.code,f.source,f.from,f.until};
+        String[] clauses={"p.id=?","a.id=?","a.student_id=?","p.event_code=?","p.detail_json->>'$.source'=?","p.server_received_at>=?","p.server_received_at<?"};
         for(int i=0;i<values.length;i++)if(values[i]!=null){where.append(" AND ").append(clauses[i]);args.add(values[i]);}
         long count=((Number)one(c,"SELECT COUNT(*) n"+where,args.toArray()).get("n")).longValue();
         args.add(f.size);args.add((f.page-1L)*f.size);

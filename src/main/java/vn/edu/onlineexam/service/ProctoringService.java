@@ -38,7 +38,8 @@ public final class ProctoringService {
         });
     }
     public ProctoringEventDao.Page history(Access a,ProctoringEventDao.Filter filter)throws SQLException{
-        if(filter.page()<1 || filter.size()<1 || filter.size()>50 || filter.code()!=null && !CODES.contains(filter.code())
+        if(filter.page()<1 || filter.size()<1 || filter.size()>50 || filter.code()!=null && !CODES.contains(filter.code()) && !Set.of("CONCURRENT_SESSION_DETECTED","HEARTBEAT_TIMEOUT","SESSION_REVOKED","SESSION_EXPIRED","SESSION_ACCESS_CHANGED").contains(filter.code())
+            || filter.source()!=null && !Set.of("BROWSER","DERIVED","SERVER").contains(filter.source())
             || filter.from()!=null && filter.until()!=null && !filter.from().isBefore(filter.until()))throw new IllegalArgumentException();
         return jdbc.transaction(c->{current(c,a,Set.of("TEACHER","ADMIN"));return dao.history(c,a.actor().id(),filter);});
     }
