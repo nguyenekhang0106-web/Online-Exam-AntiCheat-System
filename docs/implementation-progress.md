@@ -8,7 +8,7 @@
 | 2A · Authentication và phiên đăng nhập | COMPLETED | Chủ dự án xác nhận cả ba vai trò đã đăng nhập/đăng xuất thành công trên Tomcat + MySQL. TLS và timeout theo thời gian thực vẫn pending. |
 | 2B.1 · Danh sách tài khoản | PARTIAL | Đã triển khai GET /admin/users. MySQL SELECT và smoke HTTP khách đạt. Còn xác minh trang kết quả với phiên ADMIN thật và 403 cho hai vai trò còn lại qua HTTP. |
 | 3 · Ngân hàng câu hỏi | PARTIAL | 3A hoàn thành; 3B–3C đã nghiệm thu phạm vi chủ sở hữu. Đọc SHARED của chủ khác còn chờ quyết định. Xem biên bản giai đoạn 3 bên dưới. |
-| 4 · Đề và phân công | Chưa triển khai | Publish nguyên tử, snapshot policy, kiểm tra cùng môn, cửa sổ và override. |
+| 4 · Đề và phân công | PARTIAL | Đã triển khai cấu hình, biên soạn và lịch thi. Xem biên bản giai đoạn 4 bên dưới. |
 | 5 · Làm bài | Chưa triển khai | Hai request start đồng thời chỉ tạo một lượt. Autosave đúng option, giữ thứ tự sau khi resume. |
 | 6 · Kết quả | Chưa triển khai | Submit lặp chỉ chấm một lần, độ chính xác DECIMAL, quyền xem và điều chỉnh điểm có audit. |
 | 7 · Giám sát | Chưa triển khai | Retry event không nhân đôi, kiểm tra quyền tải evidence, lưu reviewer và lý do. |
@@ -220,3 +220,37 @@ Roadmap giao giai đoạn 3 cho Trung. 3A–3C là mã bàn giao cho ba module t
 - PASS hồi quy VerifyAuth, VerifyUserWrites, VerifyJdbcTransaction, VerifyUserDirectory, VerifyRoles, VerifySubjects, VerifyOfferings, VerifyEnrollments và VerifyClasses. Tất cả kiểm thử ghi dùng schema thử riêng.
 - PASS Edge headless trên HTML Tomcat đã loại trường CSRF: danh sách, chi tiết, form của cả ba module tại 390 và 1280 px (18 bố cục); kiểm tra tiếng Việt dài, bốn lựa chọn và thêm/bỏ phương án. NOT RUN thiết bị cảm ứng vật lý và fixture draft có attachment thực.
 - Để chạy lại: dùng schema test rỗng V1–V5 và biến môi trường riêng theo điều kiện VerifyRoles (loopback 13367, role_test_<32 ký tự hex thường>), build WAR rồi chạy scripts/smoke-test.ps1 -TomcatHome <Tomcat-10.1> -Port <cổng trống> -CatalogMysql. Các trạng thái 2B–2G giữ theo biên bản trước.
+
+## Giai đoạn 4 · Đề và phân công
+
+Roadmap gộp quản lý đề, câu thuộc đề, phân công và mẫu chính sách trong một dòng. Trong gói này 4A, 4B, 4C là ba phần nghiệm thu. Chức năng mẫu chính sách chỉ gồm chọn mẫu hiện có và chụp cấu hình khi công bố. Việc quản lý danh mục mẫu thuộc phạm vi riêng.
+
+| Phần | Cách sử dụng | Quy tắc |
+|---|---|---|
+| 4A · Cấu hình đề | TEACHER mở /teacher/exams để tìm kiếm, lọc trạng thái, đổi thứ tự, phân trang và tạo đề. Chọn tên đề để xem hoặc sửa. ADMIN tra cứu ở /admin/exams. | Chỉ chủ đề thi có quyền ghi. Lưu thời lượng, điểm đạt, giới hạn lượt, hướng dẫn, trộn câu/phương án, quy tắc lấy điểm giữa các lượt và chế độ công bố. Publish chụp cấu hình và các trường của mẫu giám sát. |
+| 4B · Biên soạn | Trong chi tiết đề nháp, giáo viên lọc theo ngân hàng, chủ đề, độ khó, thêm/loại phiên bản, chỉnh thứ tự và điểm. Trang chi tiết hiển thị số câu và tổng điểm. | Kiểm tra phiên bản mới nhất, câu PUBLISHED, đúng môn, cả ngân hàng và câu thuộc giáo viên, phương án và số đáp án đúng hợp lệ. Phiên bản có tệp đính kèm bị loại khỏi danh sách và bị từ chối tại Service. Khi đã dùng trong đề, cơ chế giai đoạn 3 bảo vệ phiên bản. |
+| 4C · Phân công và lịch | Trên đề PUBLISHED, giáo viên chọn lớp học phần hoặc cá nhân, nhập hai mốc UTC và số lượt ghi đè tùy chọn. Sinh viên xem /student/schedule. | Lớp phải cùng môn, đang mở, do giáo viên phụ trách và có ghi danh hợp lệ. Chọn cá nhân từ sinh viên đang học trong một lớp hợp lệ. Lịch cá nhân đã cấp được lưu độc lập. Chỉ sửa/thu hồi trước giờ mở và khi đề chưa có lượt thi. |
+
+V4 dùng exams.max_attempts và max_attempts_override trên từng loại phân công. Giá trị hợp lệ 1–32767, override trống lưu SQL NULL. Lịch liệt kê rõ từng cửa sổ và giá trị cấu hình, không cộng hai giới hạn. Lượt thực tế sẽ được kiểm soát ở giai đoạn 5. CRUD contract mô tả ưu tiên override cá nhân, lớp hợp lệ có ID nhỏ nhất, rồi mặc định đề; roadmap vẫn yêu cầu chốt trường hợp nhiều lớp và lượt hủy. Phạm vi chia sẻ ngân hàng và công thức PARTIAL_CREDIT vẫn mở.
+
+Ghi dữ liệu dùng POST/CSRF/PRG, xác minh phiên và vai trò trong transaction. Các thao tác trên cùng đề khóa hàng exams trước khi đọc dấu phiên bản từ audit_logs. Dấu phiên bản áp dụng chung cho cấu hình, câu và lịch. Xung đột trả HTTP 409. Audit và thay đổi dữ liệu commit cùng nhau. Trạng thái lần lượt DRAFT → PUBLISHED → CLOSED → ARCHIVED. Chặn đóng khi đang có lượt hoặc cửa sổ đang mở. ADMIN đọc metadata và lịch. Truy vấn lịch STUDENT chỉ lấy thông tin phân công, tiêu đề và giới hạn.
+
+**File triển khai** gồm dao/ExamDao.java, dao/ExamQuestionDao.java, dao/ExamAssignmentDao.java, service/ExamService.java (gồm Config và Detail), controller/ExamServlet.java và WEB-INF/views/exam/{list.jsp,detail.jsp,schedule.jsp,header.jspf,keys.jspf,config.jspf,calendar.jspf}. account.jsp thêm liên kết theo vai trò. scripts/VerifyExams.java dùng chung fixture và session với VerifySubjects.java. scripts/smoke-test.ps1 thêm tùy chọn -ExamMysql.
+
+Để nghiệm thu lại trên một schema fixture rỗng V1–V7 riêng, đặt DB_URL trỏ 127.0.0.1:13367/role_test_<32 hex>, khai báo credential thử và JAVA_HOME trong tiến trình, chạy Maven Wrapper clean package rồi chạy scripts/smoke-test.ps1 -TomcatHome <đường dẫn Tomcat 10.1> -Port <cổng trống> -ExamMysql. Suite tự kiểm tra tên schema, cổng và trạng thái fixture trước khi ghi.
+
+
+### Nghiệm thu 21/11/2026
+
+| Phần | Trạng thái | Bằng chứng và giới hạn |
+|---|---|---|
+| 4A · Quản lý đề | COMPLETED trong phạm vi quản lý đề | Đã tạo/sửa, kiểm tra thời lượng, giới hạn lượt 0 và vượt SMALLINT, lưu cấu hình và snapshot mẫu, từ chối công bố đề rỗng, chạy toàn bộ vòng đời trạng thái và bảo vệ cửa sổ đang mở/lượt đã bắt đầu. |
+| 4B · Biên soạn | PARTIAL | Đã nghiệm thu câu thuộc chủ sở hữu, ghim phiên bản, đề sai môn, phiên bản thiếu, câu nháp/trùng, thêm/loại, tính tổng và giao dịch. Fixture có bản ghi attachment bị từ chối. Chia sẻ giữa giáo viên còn mở; tệp vật lý chưa được nghiệm thu. |
+| 4C · Phân công và lịch | PARTIAL | Đã nghiệm thu lịch lớp/cá nhân, giới hạn ghi đè, khoảng thời gian sai, lớp thiếu, cá nhân không hợp lệ, phân công trùng, thu hồi và bảo vệ lịch sử. Hai lịch chồng nhau hiển thị được đồng thời. Chính sách áp dụng khi nhiều lớp cùng hợp lệ và cách tính lượt hủy còn cần chốt trước giai đoạn 5. |
+
+- PASS Maven Wrapper clean package, javac release 21, WAR có đủ servlet và JSP giai đoạn 4. Surefire báo No tests to run. Các kết quả nghiệp vụ bên dưới đến từ script riêng.
+- PASS MySQL 9.6 scratch tại 127.0.0.1:13367 và Tomcat 10.1 tại 127.0.0.1:18084. Các test ghi dùng schema riêng. Đã thử phiên ADMIN, hai phiên độc lập của giáo viên sở hữu, giáo viên khác, STUDENT và guest. Các thao tác đồng thời sửa cấu hình, thêm cùng câu và phân công cùng lớp đều cho một HTTP 303 và một HTTP 409. Lỗi audit cưỡng bức sau ghi của cả ba module trả 503 và rollback dữ liệu.
+- PASS ca 2F: khi cửa sổ lớp đang mở và chưa có lịch cá nhân, rút ghi danh trả 409. Sau khi cấp lịch cá nhân trùng cửa sổ, rút ghi danh trả 303; lịch cá nhân vẫn xuất hiện. Sinh viên không nhận nội dung câu hỏi khi xem lịch. Không cấp hoặc cộng lượt trong kiểm thử này.
+- PASS hồi quy VerifyAuth, VerifyUserWrites, VerifyJdbcTransaction, VerifyUserDirectory, VerifyRoles, VerifySubjects, VerifyOfferings, VerifyEnrollments, VerifyClasses, VerifyQuestionCatalog. VerifyUserDirectory đọc dữ liệu dev bằng SELECT; các bài thử ghi dùng fixture cô lập hoặc JDBC giả lập.
+- PASS scripts/verify-exam-layout.ps1 trên Edge headless: danh sách, đề nháp, phân công, lịch sinh viên ở 390 và 1280 px (8/8 không tràn ngang). HTML dùng trong kiểm tra lấy từ Tomcat và bỏ giá trị CSRF trước khi lưu vào target. Lần chạy đầu phát hiện JSP fragment sai encoding; sau khi khai báo UTF-8 từng file, ca HTTP tiếng Việt và bộ hồi quy chạy thành công.
+- NOT RUN thao tác cảm ứng trên thiết bị vật lý, phân phối tệp câu hỏi thật, kiểm tra tải lớn hoặc quá trình bắt đầu/chấm lượt thi. Trạng thái các giai đoạn 1–3 giữ theo biên bản trước.
