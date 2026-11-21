@@ -1,5 +1,23 @@
 <%@ page pageEncoding="UTF-8" %>
-<% var schedule=(List<Map<String,Object>>)request.getAttribute("schedule"); if(schedule.isEmpty()){ %><p>Chưa có lịch thi.</p><% } for(var slot:schedule){ %>
-<article><strong><%=escape(slot.get("title"))%></strong> · <%="COURSE".equals(slot.get("scope"))?"Lớp học phần":"Cá nhân"%> #<%=slot.get("target")%><br>
-<%=escape(slot.get("opens_at"))%> – <%=escape(slot.get("closes_at"))%> UTC · <%=escape(slot.get("window_state"))%><br>
-Giới hạn của đề: <%=slot.get("max_attempts")%> lượt. Ghi đè của phân công: <%=escape(slot.get("max_attempts_override"))%>.<% if ("STUDENT".equals(request.getAttribute("roleLabel"))) { %> <a href="attempts?action=start&amp;exam=<%=slot.get("exam_id")%>">Kiểm tra quyền vào thi</a><% } %></article><% } %>
+<% var schedule=(List<Map<String,Object>>)request.getAttribute("schedule");
+   if(schedule.isEmpty()){ %><div class="empty-state">Chưa có lịch thi.</div><% } else { %>
+<div class="schedule-list">
+<% for(var slot:schedule){ %>
+  <article>
+    <div class="task-card-tags">
+      <span class="<%=uiBadge(slot.get("window_state"))%>"><%=escape(slot.get("window_state"))%></span>
+      <span class="badge badge-purple"><%="COURSE".equals(slot.get("scope"))?"Lớp học phần":"Cá nhân"%> #<%=slot.get("target")%></span>
+    </div>
+    <h3 style="margin-bottom:.4rem"><%=escape(slot.get("title"))%></h3>
+    <p class="cell-sub" style="margin-bottom:.5rem"><%=escape(slot.get("opens_at"))%> – <%=escape(slot.get("closes_at"))%> UTC</p>
+    <p style="font-size:.86rem;color:var(--text-secondary);margin-bottom:.75rem">
+      Giới hạn của đề: <strong><%=slot.get("max_attempts")%></strong> lượt.
+      Ghi đè của phân công: <strong><%=escape(slot.get("max_attempts_override"))%></strong>.
+    </p>
+    <% if ("STUDENT".equals(request.getAttribute("roleLabel"))) { %>
+      <a class="btn btn-primary btn-sm" href="attempts?action=start&amp;exam=<%=slot.get("exam_id")%>">Kiểm tra quyền vào thi</a>
+    <% } %>
+  </article>
+<% } %>
+</div>
+<% } %>

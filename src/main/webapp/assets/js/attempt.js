@@ -2,6 +2,10 @@
 const forms = Array.from(document.querySelectorAll("form.answer"));
 const pending = new Map();
 const dirty = new Set();
+function syncNav(form) {
+    const pill = document.querySelector('.q-pill[href="#' + form.id + '"]');
+    if (pill) pill.classList.toggle("is-answered", Boolean(form.querySelector(":checked")));
+}
 async function save(form) {
     if (pending.has(form)) return pending.get(form);
     const output = form.querySelector("output");
@@ -18,7 +22,9 @@ async function save(form) {
                     throw new Error(response.status === 409 ? "Dữ liệu đã thay đổi hoặc hết giờ. Hãy tải lại." : "Chưa lưu được. Kiểm tra kết nối và phiên đăng nhập.");
                 }
                 form.elements.revision.value = (await response.json()).revision;
-                output.textContent = form.querySelector(":checked") ? "Đã lưu" : "Đã lưu · Chưa trả lời";
+                const answered = Boolean(form.querySelector(":checked"));
+                syncNav(form);
+                output.textContent = answered ? "Đã lưu" : "Đã lưu · Chưa trả lời";
             } catch (error) {
                 dirty.add(form);
                 output.textContent = error instanceof TypeError ? "Mất kết nối. Hãy bấm Lưu để thử lại." : error.message;
@@ -30,7 +36,8 @@ async function save(form) {
     try { await work; } finally { pending.delete(form); }
 }
 for (const form of forms) {
-    form.addEventListener("change", () => { dirty.add(form); save(form); });
+    syncNav(form);
+    form.addEventListener("change", () => { syncNav(form); dirty.add(form); save(form); });
     form.addEventListener("submit", event => { event.preventDefault(); save(form); });
 }
 document.querySelector("#confirm").addEventListener("click", async event => {
