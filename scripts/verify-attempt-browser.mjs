@@ -6,7 +6,7 @@ import {setTimeout as pause} from "node:timers/promises";
 
 let input="";
 for await(const part of process.stdin) input+=part;
-const {base,id,question,correct,wrong,password}=JSON.parse(input);
+const {base,id,question,correct,wrong,password,fixtureCookie}=JSON.parse(input);
 const origin=new URL(base);
 if(origin.protocol!=="http:" || origin.hostname!=="127.0.0.1" || !/^jdbc:mysql:\/\/127\.0\.0\.1:13367\/role_test_[\da-f]{32}$/.test(process.env.DB_URL||"")) throw Error("Scratch fixture required");
 const profile=await mkdtemp(join(process.cwd(),"target","attempt-edge-"));
@@ -19,7 +19,7 @@ async function until(read,label){
     for(let i=0;i<120;i++){try{const v=await read();if(v)return v;}catch{} await pause(120);}
     throw Error("Browser check failed: "+label);
 }
-try{
+try{ await (async()=>{
     const port=await until(async()=>(await readFile(join(profile,"DevToolsActivePort"),"utf8")).split(/\r?\n/)[0],"Edge startup");
     const targets=await(await fetch("http://127.0.0.1:"+port+"/json/list")).json();
     ws=new WebSocket(targets.find(t=>t.type==="page").webSocketDebuggerUrl);
@@ -34,15 +34,45 @@ try{
     }
     async function evaluate(expression){const r=await call("Runtime.evaluate",{expression,returnByValue:true});if(r.exceptionDetails)throw Error("Browser evaluation failed");return r.result.value;}
     const navigate=path=>call("Page.navigate",{url:new URL(path,origin).href});
-    await call("Page.enable");await call("Network.enable");await navigate("login");
+    await call("Page.enable");await call("Network.enable");
+    if(fixtureCookie){
+        await call("Network.setCookie",{name:"JSESSIONID",value:fixtureCookie,url:origin.href,path:origin.pathname.replace(/\/$/,""),httpOnly:true});
+    }else{
+    await navigate("login");
     await until(()=>evaluate("!!document.querySelector('input[type=password]')"),"login form");
     await evaluate("document.querySelector('input[name=email]').value='student@subject.invalid';document.querySelector('input[type=password]').value="+JSON.stringify(password)+";document.querySelector('form').requestSubmit()");
     await until(()=>evaluate("location.pathname.endsWith('/account')"),"student login");
+    }
     await navigate("student/attempts?action=take&id="+id);
     const form="document.getElementById('q"+Number(question)+"')";
     const choice=n=>form+".querySelector('input[value=\""+Number(n)+"\"][name=option]')";
     await call("Page.bringToFront");
     await until(()=>evaluate("document.readyState==='complete' && !!"+form),"paper");
+    const confirmed=()=>evaluate("document.querySelector('#contact-status')?.textContent.includes('vừa xác nhận')");
+    await until(confirmed,"server heartbeat on paper");
+    if(process.argv.includes("--contact-only"))return;
+    if(process.argv.includes("--slow-submit")){
+        let pending=0;
+        ws.addEventListener("message",event=>{
+            const msg=JSON.parse(event.data);
+            if(msg.method!=="Fetch.requestPaused")return;
+            pending++;
+            if(pending===1)void call("Fetch.fulfillRequest",{requestId:msg.params.requestId,responseCode:503});
+        });
+        await call("Fetch.enable",{patterns:[{urlPattern:"*/student/proctoring/heartbeat"}]});
+        await evaluate("window.dispatchEvent(new Event('online'))");
+        await until(()=>evaluate("document.querySelector('#contact-status').textContent.includes('thử kết nối lại')"),"503 feedback");
+        await evaluate("window.dispatchEvent(new Event('online'))");
+        await until(()=>pending===2,"heartbeat withheld");
+        await evaluate(form+".requestSubmit()");
+        await until(()=>evaluate(form+".querySelector('output').textContent==='Đã lưu'"),"save during slow heartbeat");
+        await evaluate("document.querySelector('#confirm').click()");
+        await until(()=>evaluate("!!document.querySelector('button[value=submit]')"),"confirmation during slow heartbeat");
+        await evaluate("document.querySelector('button[value=submit]').click()");
+        await until(()=>evaluate("document.querySelector('h1')?.textContent==='Lịch sử lượt thi' && !location.search"),"submit complete");
+        console.log("PASS browser heartbeat 503, stalled heartbeat, answer save and final submission");
+        return;
+    }
     const monitored=await evaluate("document.querySelector('#monitor').dataset.focus==='true'");
     let pasteResponses=0;
     if(monitored){
@@ -85,6 +115,13 @@ try{
         await until(()=>accepted.has("WINDOW_BLUR"),"separate visible blur delivered");
         if([...codes.values()].filter(code=>code==="WINDOW_BLUR").length>beforeBlur+1)throw Error("Repeated blur flooded intake");
         if(unexpectedField)throw Error("Unexpected proctoring payload field");
+        await call("Runtime.evaluate",{expression:"window.contactTab=window.open(location.href,'_blank');true",userGesture:true});
+        await until(()=>evaluate("window.contactTab?.document.querySelector('#contact-status')?.textContent.includes('vừa xác nhận')"),"second tab shared login");
+        await evaluate("window.contactTab.close()");
+        const peer=spawn(process.execPath,[process.argv[1],"--contact-only"],{stdio:["pipe","inherit","inherit"],windowsHide:true});
+        const finished=once(peer,"exit");peer.stdin.end(input);
+        if((await finished)[0]!==0)throw Error("Independent Edge profile failed");
+        console.log("PASS second tab and second Edge profile heartbeat");
         console.log("PASS browser detector delivery: fullscreen, copy, paste, visibility and focus");
     }
     for(const width of [390,1280]){
@@ -92,10 +129,12 @@ try{
         if(!await evaluate("document.documentElement.scrollWidth<=innerWidth"))throw Error("Paper overflow");
     }
     await call("Network.emulateNetworkConditions",{offline:true,latency:0,downloadThroughput:-1,uploadThroughput:-1});
+    await until(()=>evaluate("document.querySelector('#contact-status').textContent.includes('ngoại tuyến')"),"browser offline indication");
     if(monitored)await evaluate(form+".dispatchEvent(new Event('paste',{bubbles:true}))");
     await evaluate(choice(wrong)+".click()");
     await until(()=>evaluate(form+".querySelector('output').textContent.includes('kết nối')"),"offline feedback");
     await call("Network.emulateNetworkConditions",{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
+    await until(confirmed,"heartbeat on reconnect");
     await evaluate(form+".requestSubmit()");
     await until(()=>evaluate(form+".querySelector('output').textContent==='Đã lưu'"),"retry save");
     if(monitored){
@@ -116,4 +155,4 @@ try{
     await evaluate("document.querySelector('#confirm').click()");
     await until(()=>evaluate("document.querySelector('h1')?.textContent==='Xác nhận nộp bài'"),"confirmation");
     console.log("PASS Edge live: mobile/desktop paper, offline save, retry, reload, autosave, confirmation");
-}finally{ws?.close();edge.kill();}
+})();}finally{ws?.close();edge.kill();}
