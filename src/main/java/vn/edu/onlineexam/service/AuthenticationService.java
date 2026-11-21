@@ -32,13 +32,15 @@ public final class AuthenticationService {
         });
     }
 
-    public AuthUser current(String hash) throws SQLException {
+    public AuthUser current(String hash) throws SQLException { return current(hash,true); }
+
+    public AuthUser current(String hash,boolean userActivity) throws SQLException {
         return jdbc.transaction(c -> {
             Long id=dao.active(c,hash);
             if (id==null) return null;
             var roles=dao.roles(c,id);
             if (roles.isEmpty()) return null;
-            dao.touch(c,hash);
+            if(userActivity)dao.touch(c,hash);
             return new AuthUser(id,roles);
         });
     }

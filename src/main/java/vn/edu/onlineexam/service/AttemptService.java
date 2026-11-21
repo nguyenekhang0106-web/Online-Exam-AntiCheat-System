@@ -69,7 +69,7 @@ public final class AttemptService {
     }
     private static boolean enabled(Object v){return Boolean.TRUE.equals(v) || (v instanceof Number n && n.intValue()==1);}
     private static boolean expired(Map<String,Object> a,LocalDateTime now){return !now.isBefore((LocalDateTime)a.get("deadline_at"));}
-    private void entitled(Connection c,Map<String,Object> attempt,long student,LocalDateTime now)throws SQLException{
+    void entitled(Connection c,Map<String,Object> attempt,long student,LocalDateTime now)throws SQLException{
         if(!"PUBLISHED".equals(attempt.get("exam_status")))throw new IllegalStateException("Đề không còn mở.");
         // The original authorization must still cover this instant. Never extend the stored deadline.
         var windows=dao.windows(c,num(attempt,"exam_id"),student);
