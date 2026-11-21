@@ -184,7 +184,7 @@ Gitignore không ngăn Maven đóng gói file nhạy cảm nằm trong source v�
 Thiết kế 34 bảng, hướng dẫn migration/seed và các quy tắc transaction/locking:
 [docs/database-design.md](docs/database-design.md).
 ERD: [database/erd/online_exam_erd.md](database/erd/online_exam_erd.md).
-Migration nằm trong `database/migrations/V1__...` đến `V7__...`, không tự chạy khi build/deploy.
+Migration nằm trong `database/migrations/V1__...` đến `V8__...`, không tự chạy khi build/deploy.
 Chỉ chạy SQL trên database thử nghiệm trống sau khi được cho phép.
 Helper `scripts/SeedAccounts.java` sinh SQL tài khoản có hash riêng trong `.local/`, không kết nối DB;
 `PasswordHasher` cung cấp encoder/verifier dùng chung cho Auth Service sau này.
