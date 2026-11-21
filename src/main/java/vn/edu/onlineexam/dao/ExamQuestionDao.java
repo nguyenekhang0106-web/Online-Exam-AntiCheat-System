@@ -26,7 +26,7 @@ public final class ExamQuestionDao extends QuestionCatalogDao {
         one(c,"SELECT v.id "+SOURCE+" AND v.id=? FOR UPDATE",subject,owner,owner,version);
     }
     public List<Map<String,Object>> items(Connection c,long exam) throws SQLException {
-        return rows(c,"SELECT x.id,x.question_version_id,x.fixed_order,x.points,v.content,v.version_no FROM exam_questions x JOIN question_versions v ON v.id=x.question_version_id WHERE x.exam_id=? ORDER BY x.fixed_order",exam);
+        return rows(c,"SELECT x.id,v.question_id,x.question_version_id,x.fixed_order,x.points,v.content,v.version_no FROM exam_questions x JOIN question_versions v ON v.id=x.question_version_id WHERE x.exam_id=? ORDER BY x.fixed_order",exam);
     }
     public void save(Connection c,long exam,long version,int position,BigDecimal points,boolean existing) throws SQLException {
         if(existing) {

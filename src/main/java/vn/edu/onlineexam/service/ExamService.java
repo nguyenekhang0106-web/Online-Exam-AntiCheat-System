@@ -18,14 +18,28 @@ public final class ExamService {
     public record Detail(Map<String,Object> exam,List<Map<String,Object>> items,List<Map<String,Object>> choices,
                          List<Map<String,Object>> schedule,List<Map<String,Object>> courses,List<Map<String,Object>> students){}
     public record Config(String title,int duration,int attempts,BigDecimal pass,String instructions,boolean shuffleQuestions,
-                         boolean shuffleOptions,String scorePolicy,String resultRelease,String answerRelease,Long policy){
+                         boolean shuffleOptions,String scorePolicy,String resultRelease,String answerRelease,Long policy,String mode,Integer count){
         public Config {
+            if(!Set.of("FIXED","RANDOM_PER_ATTEMPT").contains(mode) || ("FIXED".equals(mode)?count!=null:count==null || count<1))
+                throw new SelectionError("Chế độ cố định cần để trống số câu. Chế độ ngẫu nhiên cần số câu lớn hơn 0.");
             if(title==null || title.isBlank() || title.strip().codePointCount(0,title.strip().length())>200)throw new IllegalArgumentException();
             title=title.strip(); positiveShort(duration);positiveShort(attempts);decimal(pass,new BigDecimal("100"));
             if(instructions==null || instructions.getBytes(java.nio.charset.StandardCharsets.UTF_8).length>65535
                     || !Set.of("HIGHEST","LATEST","FIRST").contains(scorePolicy)
                     || !Set.of("MANUAL","IMMEDIATE","AFTER_CLOSE").contains(resultRelease)
                     || !Set.of("NEVER","AFTER_CLOSE","MANUAL").contains(answerRelease))throw new IllegalArgumentException();
+        }
+    }
+    public static final class SelectionError extends IllegalArgumentException {
+        SelectionError(String message){super(message);}
+    }
+    private static void validatePool(List<Map<String,Object>> pool,int count){
+        if(count>pool.size())throw new SelectionError("Số câu cần rút vượt số câu nguồn.");
+        var ids=new HashSet<Object>();
+        BigDecimal weight=(BigDecimal)pool.getFirst().get("points");
+        for(var row:pool){
+            if(!ids.add(row.get("question_id")))throw new SelectionError("Nguồn có nhiều phiên bản của cùng một câu.");
+            if(weight.compareTo((BigDecimal)row.get("points"))!=0)throw new SelectionError("Các câu nguồn phải có cùng điểm số.");
         }
     }
     private static void positiveShort(int n){if(n<1 || n>Short.MAX_VALUE)throw new IllegalArgumentException();}
@@ -79,12 +93,14 @@ public final class ExamService {
     }
     public void edit(Access a,long id,long stamp,Config cfg)throws SQLException{
         change(a,id,stamp,"DRAFT","EXAM_EDIT",(c,e)->{
+            if("RANDOM_PER_ATTEMPT".equals(cfg.mode))validatePool(questions.items(c,id),cfg.count);
             exams.edit(c,id,cfg.title,cfg.duration,cfg.attempts,cfg.pass);
             options(c,id,cfg);
             if(!Objects.equals(e.get("policy_id"),cfg.policy))exams.policy(c,id,a.actor().id(),cfg.policy);
         });
     }
     private void options(Connection c,long id,Config cfg)throws SQLException{
+        exams.selection(c,id,cfg.mode,cfg.count);
         exams.options(c,id,cfg.instructions,cfg.shuffleQuestions,cfg.shuffleOptions,cfg.scorePolicy,cfg.resultRelease,cfg.answerRelease);
     }
     public void item(Access a,long id,long stamp,String action,long version,int order,BigDecimal points)throws SQLException{
@@ -110,7 +126,9 @@ public final class ExamService {
     }
     private void validateComposition(Connection c,Map<String,Object> e,long owner)throws SQLException{
         BigDecimal total=BigDecimal.ZERO;
-        for(var item:questions.items(c,number(e,"id"))){
+        var pool=questions.items(c,number(e,"id"));
+        if("RANDOM_PER_ATTEMPT".equals(e.get("selection_mode")))validatePool(pool,Math.toIntExact(number(e,"question_count")));
+        for(var item:pool){
             questions.validate(c,number(e,"subject_id"),owner,number(item,"question_version_id"));
             total=total.add((BigDecimal)item.get("points"));
         }

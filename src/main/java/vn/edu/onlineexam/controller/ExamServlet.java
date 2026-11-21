@@ -24,7 +24,8 @@ public final class ExamServlet extends HttpServlet {
         return new ExamService.Config(p(r,"title"),Integer.parseInt(p(r,"duration")),Integer.parseInt(p(r,"attempts")),new BigDecimal(p(r,"pass")),
             p(r,"instructions"),"on".equals(p(r,"shuffleQuestions")),"on".equals(p(r,"shuffleOptions")),
             Objects.requireNonNullElse(r.getParameter("scorePolicy"),"HIGHEST"),Objects.requireNonNullElse(r.getParameter("resultRelease"),"MANUAL"),
-            Objects.requireNonNullElse(r.getParameter("answerRelease"),"NEVER"),p(r,"policy").isEmpty()?null:number(r,"policy"));
+            Objects.requireNonNullElse(r.getParameter("answerRelease"),"NEVER"),p(r,"policy").isEmpty()?null:number(r,"policy"),
+            Objects.requireNonNullElse(r.getParameter("mode"),"FIXED"),p(r,"count").isBlank()?null:Integer.valueOf(p(r,"count")));
     }
     @Override protected void doGet(HttpServletRequest r,HttpServletResponse s)throws ServletException,IOException{handle(r,s,false);}
     @Override protected void doPost(HttpServletRequest r,HttpServletResponse s)throws ServletException,IOException{handle(r,s,true);}
@@ -66,6 +67,7 @@ public final class ExamServlet extends HttpServlet {
             if("TEACHER".equals(access.role()))r.setAttribute("policies",service.policies(access));
             r.getRequestDispatcher("/WEB-INF/views/exam/"+view+".jsp").forward(r,s);
         }catch(SecurityException e){s.sendError(403);}catch(NoSuchElementException e){s.sendError(404);}
+        catch(ExamService.SelectionError e){s.sendError(400,e.getMessage());}
         catch(IllegalArgumentException|DateTimeParseException e){s.sendError(400,"Dữ liệu không hợp lệ.");}
         catch(IllegalStateException e){s.sendError(409,"Thao tác xung đột với trạng thái hiện tại. Hãy tải lại trang.");}
         catch(SQLException e){s.sendError(503);}

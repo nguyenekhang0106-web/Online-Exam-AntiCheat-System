@@ -41,6 +41,9 @@ public final class ExamDao extends QuestionCatalogDao {
                 """,exam);
         } else update(c,"UPDATE exams SET status=? WHERE id=?",state,exam);
     }
+    public void selection(Connection c,long id,String mode,Integer count)throws SQLException{
+        update(c,"UPDATE exams SET selection_mode=?,question_count=? WHERE id=?",mode,count,id);
+    }
     public void options(Connection c,long id,String instructions,boolean shuffleQuestions,boolean shuffleOptions,
                         String scorePolicy,String resultRelease,String answerRelease)throws SQLException{
         update(c,"UPDATE exams SET instructions=NULLIF(?,''),shuffle_questions=?,shuffle_options=?,attempt_score_policy=?,result_release_mode=?,answer_release_mode=? WHERE id=?",

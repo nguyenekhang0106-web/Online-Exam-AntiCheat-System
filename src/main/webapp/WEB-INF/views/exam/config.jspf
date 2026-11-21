@@ -1,4 +1,6 @@
 <%@ page pageEncoding="UTF-8" %>
+<label>Cách chọn câu hỏi <select name="mode"><option value="FIXED">Cố định</option><option value="RANDOM_PER_ATTEMPT" <%="RANDOM_PER_ATTEMPT".equals(e.get("selection_mode"))?"selected":""%>>Ngẫu nhiên mỗi lượt</option></select></label>
+<label>Số câu cần rút (để trống nếu cố định) <input type="number" min="1" name="count" value="<%=escape(Objects.toString(e.get("question_count"),""))%>"></label>
 <label>Tên đề <input name="title" required maxlength="200" value="<%=escape(e.getOrDefault("title",""))%>"></label>
 <label>Thời lượng (phút) <input name="duration" type="number" required min="1" max="32767" value="<%=e.getOrDefault("duration_minutes",45)%>"></label>
 <label>Số lượt tối đa <input name="attempts" type="number" required min="1" max="32767" value="<%=e.getOrDefault("max_attempts",1)%>"></label>
