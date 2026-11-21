@@ -111,7 +111,9 @@
         if (event === "paste" && monitor.dataset.paste !== "true") return;
         report(event === "copy" ? "COPY_ATTEMPT" : "PASTE_ATTEMPT","Đã quan sát thao tác " + (event === "copy" ? "sao chép." : "dán."));
     });
-    window.addEventListener("online",schedule);
+    window.addEventListener("offline",() => report("CONNECTION_LOST","Trình duyệt báo ngoại tuyến."));
+    window.addEventListener("online",() => { report("CONNECTION_RESTORED","Trình duyệt báo mạng khả dụng trở lại."); schedule(); });
+    window.addEventListener("attempt:contact-ended",stop);
     window.addEventListener("pagehide",stop);
     window.addEventListener("attempt:leaving",stop);
     window.addEventListener("pageshow",e => { if(e.persisted) location.reload(); });
