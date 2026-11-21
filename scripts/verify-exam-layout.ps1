@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $layout = Join-Path $root 'target/exam-layout'
 $pages = @('list','draft','schedule','assignments')
-if ($Attempts) { $pages = 'attempt-start','attempt-take','attempt-confirm','attempt-history' }
+if ($Attempts) { $pages = 'attempt-start','attempt-take','attempt-confirm','attempt-history','events' }
 foreach ($name in $pages) {
     if (!(Test-Path -LiteralPath (Join-Path $layout "$name.html"))) { throw 'Run the matching ExamMysql or AttemptMysql suite first.' }
 }

@@ -124,8 +124,13 @@ class VerifyAttempts {
                     long missing=scalar(c,"SELECT MIN(o.id) FROM question_version_options o JOIN exam_questions x ON x.question_version_id=o.question_version_id WHERE x.exam_id="+exam+" AND NOT EXISTS(SELECT 1 FROM attempt_questions aq WHERE aq.attempt_id=? AND aq.exam_question_id=x.id)",id);
                     status(client,save+missing,400);
                     if(client==a){
+                        sql(c,"UPDATE exams SET policy_snapshot_json=JSON_SET(policy_snapshot_json,'$.warn_on_focus_loss',1,'$.detect_paste',1,'$.require_fullscreen',1) WHERE id=?",exam);
                         long wrong=scalar(c,"SELECT ord.option_id FROM attempt_option_orders ord JOIN question_version_options o ON o.id=ord.option_id WHERE ord.attempt_question_id=? AND o.is_correct=0",qid);
                         browser(id,qid,key,wrong);
+                        if("1".equals(System.getenv("ATTEMPT_BROWSER"))){
+                            for(String code:List.of("TAB_HIDDEN","WINDOW_BLUR","FULLSCREEN_EXIT","COPY_ATTEMPT","PASTE_ATTEMPT"))
+                                check(scalar(c,"SELECT COUNT(*) FROM proctoring_events WHERE event_code='"+code+"' AND attempt_id=?",id)>0,"browser event "+code);
+                        }
                         check(parallel.send("logout",csrf(parallel)).statusCode()==302,"logout during draw");
                         parallel=VerifyRoles.login("student@subject.invalid");
                         status(parallel,csrf(parallel)+begin,303);
@@ -145,6 +150,55 @@ class VerifyAttempts {
             System.out.println("PASS "+(random?"RANDOM_PER_ATTEMPT":"FIXED")+" 40/50 two students, snapshot and grading");
         }
         return parallel;
+    }
+    static void events(Connection c,long id,AcceptAuth student,AcceptAuth second,AcceptAuth outsider,AcceptAuth teacher,AcceptAuth admin)throws Exception{
+        String route="student/proctoring/events",key=UUID.randomUUID().toString(),token=csrf(student);
+        String form="&attempt="+id+"&code=CONNECTION_RESTORED&key="+key;
+        check(student.send(route,form).statusCode()==403 && student.send(route,"csrf=x"+form).statusCode()==403,"event CSRF");
+        check(new AcceptAuth().send(route,form).statusCode()==403,"event guest");
+        check(outsider.send(route,csrf(outsider)+form).statusCode()==404,"event ownership");
+        check(student.send(route,token+form+"&severity=HIGH").statusCode()==400,"event strict fields");
+        check(student.send(route,token+form+"&x="+"a".repeat(1200)).statusCode()==413,"event size");
+        check(student.send(route,token+form.replace("CONNECTION_RESTORED","UNKNOWN")).statusCode()==400,"event code");
+        check(student.send(route,token).statusCode()==400 && student.send(route,token+form.replace(key,"invalid")).statusCode()==400,"missing event and invalid UUID");
+        check(student.send(route,token+form.replace("attempt="+id,"attempt=90000000")).statusCode()==404,"missing attempt");
+        check(teacher.send("teacher/proctoring/events?sort=bad",null).statusCode()==400,"order whitelist");
+        check(student.send(route,token+form.replace("CONNECTION_RESTORED","PASTE_ATTEMPT")).statusCode()==409,"snapshot disables paste signal");
+        check(student.send(route,token+form+"&occurred=bad").statusCode()==400,"client UTC syntax");
+        try(var st=c.createStatement()){
+            st.execute("CREATE TRIGGER event_fixture BEFORE INSERT ON proctoring_events FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture'");
+            try{check(student.send(route,token+form).statusCode()==503,"event write failure");}finally{st.execute("DROP TRIGGER event_fixture");}
+        }
+        check(scalar(c,"SELECT COUNT(*) FROM proctoring_events WHERE attempt_id=?",id)==0,"event rollback");
+        try(var pool=Executors.newFixedThreadPool(2)){
+            var gate=new CyclicBarrier(2);String otherToken=csrf(second);
+            var a=pool.submit(()->{gate.await();return student.send(route,token+form).statusCode();});
+            var b=pool.submit(()->{gate.await();return second.send(route,otherToken+form).statusCode();});
+            check(Set.of(a.get(),b.get()).equals(Set.of(201,204)),"parallel duplicate");
+        }
+        check(student.send(route,token+form).statusCode()==204,"event retry");
+        check(student.send(route,token+form.replace("RESTORED","LOST")).statusCode()==409,"event key reused");
+        String query="/proctoring/events?attempt="+id+"&code=CONNECTION_RESTORED&size=1";
+        var history=teacher.send("teacher"+query,null);
+        check(history.statusCode()==200 && history.body().contains("1 sự kiện") && history.body().contains("BROWSER"),"teacher event history");
+        VerifyExams.layout("events",history.body());
+        check(admin.send("admin"+query,null).body().contains("0 sự kiện"),"admin scope");
+        check(teacher.send("teacher"+query+"&page=2",null).body().contains("1 sự kiện") && !teacher.send("teacher"+query+"&page=2",null).body().contains("<article"),"scope count across pages");
+        check(teacher.send("teacher"+query+"&from=2099-01-01T00:00:00Z",null).body().contains("0 sự kiện"),"server date filter");
+        sql(c,"UPDATE exams SET policy_snapshot_json=JSON_SET(policy_snapshot_json,'$.detect_paste',1) WHERE id=(SELECT exam_id FROM exam_attempts WHERE id=?)",id);
+        String enabled=token+form.replace(key,UUID.randomUUID().toString()).replace("CONNECTION_RESTORED","PASTE_ATTEMPT")+"&occurred=2020-01-01T00:00:00.123Z";
+        check(student.send(route,enabled).statusCode()==201 && student.send(route,enabled).statusCode()==204,"enabled policy and client timestamp retry");
+        sql(c,"UPDATE exams SET created_by=1 WHERE id=(SELECT exam_id FROM exam_attempts WHERE id=?)",id);
+        try{check(teacher.send("teacher"+query,null).body().contains("0 sự kiện"),"foreign teacher exam");}
+        finally{sql(c,"UPDATE exams SET created_by=2 WHERE id=(SELECT exam_id FROM exam_attempts WHERE id=?)",id);}
+        check(student.send("teacher"+query,null).statusCode()==403,"history RBAC");
+        for(int i=1;i<=29;i++)check(student.send(route,token+form.replace(key,UUID.randomUUID().toString())).statusCode()==(i==29?429:201),"shared DB quota");
+        check(second.send(route,csrf(second)+form.replace(key,UUID.randomUUID().toString())).statusCode()==429,"quota shared by sessions");
+        String repeat=csrf(second)+form;
+        int response=204;
+        for(int i=0;i<121 && response==204;i++)response=second.send(route,repeat).statusCode();
+        check(response==429 && scalar(c,"SELECT COUNT(*) FROM proctoring_events WHERE attempt_id=?",id)==30,"duplicate traffic bounded");
+        System.out.println("PASS event intake, policy, ownership, history, duplicate race, payload limits, database quota and rollback");
     }
     static void run(AcceptAuth admin,AcceptAuth teacher,AcceptAuth student,long teacherId,long studentId,ConnectionFactory factory)throws Exception{
         var second=VerifyRoles.login("student@subject.invalid");var outsider=VerifyRoles.login("extra@enrollment.invalid");
@@ -185,6 +239,7 @@ class VerifyAttempts {
             check(race(student,token+begin,second,secondToken+begin).equals(List.of(303,303)),"simultaneous start and resume");
             check(scalar(c,"SELECT COUNT(*) FROM exam_attempts WHERE exam_id=?",exam)==1,"one attempt");
             long id=scalar(c,"SELECT id FROM exam_attempts WHERE exam_id=?",exam);
+            events(c,id,student,second,outsider,teacher,admin);
             String take=route+"?action=take&id="+id,submit="&action=submit&id="+id;
             var paper=student.send(take,null);
             sql(c,"UPDATE exam_student_assignments SET opens_at=UTC_TIMESTAMP()+INTERVAL 5 MINUTE WHERE exam_id=?",exam);
@@ -223,6 +278,9 @@ class VerifyAttempts {
             check(scalar(c,"SELECT COUNT(*) FROM exam_attempts WHERE id=? AND status='IN_PROGRESS' AND graded_at IS NULL",id)==1,"submit rollback");
             check(race(student,token+submit,second,secondToken+submit).equals(List.of(303,303)),"concurrent submit");
             check(scalar(c,"SELECT total_score=5 AND max_score=5 AND passed AND percentage=100 FROM exam_attempts WHERE id=?",id)==1,"graded exact match");
+            String signal="&code=CONNECTION_LOST&key="+UUID.randomUUID()+"&attempt=";
+            String eventsRoute="student/proctoring/events";
+            check(student.send(eventsRoute,token+signal+id).statusCode()==409,"submitted attempt rejects new signal");
             status(student,token+save+wrong,409);status(student,token+begin,409);
             var history=student.send(route,null);
             check(history.statusCode()==200 && history.body().contains("Kết quả được chọn"),"immediate results");
@@ -236,6 +294,7 @@ class VerifyAttempts {
             long nextSingle=scalar(c,"SELECT aq.id FROM attempt_questions aq JOIN exam_questions x ON x.id=aq.exam_question_id WHERE x.fixed_order=1 AND aq.attempt_id=?",next);
             status(student,token+"&action=save&id="+next+"&question="+nextSingle+"&revision=0&option="+wrong,303);
             sql(c,"UPDATE exam_attempts SET started_at=UTC_TIMESTAMP()-INTERVAL 2 MINUTE,deadline_at=UTC_TIMESTAMP()-INTERVAL 1 SECOND WHERE id=?",next);
+            check(student.send(eventsRoute,token+signal+next).statusCode()==409,"expired attempt rejects new signal");
             status(student,token+save.replace("id="+id,"id="+next)+correct,409);
             status(student,token+"&action=timeout&id="+next,303);
             check(scalar(c,"SELECT total_score=0 AND status='AUTO_SUBMITTED' FROM exam_attempts WHERE id=?",next)==1,"unanswered expiry");
@@ -260,22 +319,40 @@ class VerifyAttempts {
             long third=scalar(c,"SELECT MAX(id) FROM exam_attempts WHERE exam_id=?",exam);
             check(scalar(c,"SELECT deadline_at=(SELECT closes_at FROM exam_student_assignments p WHERE p.exam_id=a.exam_id AND p.student_id=a.student_id) FROM exam_attempts a WHERE a.id=?",third)==1,"deadline capped by assignment");
             long thirdQ=scalar(c,"SELECT aq.id FROM attempt_questions aq JOIN exam_questions x ON x.id=aq.exam_question_id WHERE x.fixed_order=1 AND aq.attempt_id=?",third);
-            var competition=race(student,token+"&action=save&id="+third+"&question="+thirdQ+"&revision=0&option="+correct,second,secondToken+"&action=submit&id="+third);
+            List<Integer> competition;
+            try(var pool=Executors.newSingleThreadExecutor()){
+                var reporting=pool.submit(()->student.send(eventsRoute,token+signal+third).statusCode());
+                competition=race(student,token+"&action=save&id="+third+"&question="+thirdQ+"&revision=0&option="+correct,second,secondToken+"&action=submit&id="+third);
+                check(Set.of(201,409).contains(reporting.get(20,TimeUnit.SECONDS)),"event vs submit");
+            }
             check(competition.get(1)==303 && Set.of(303,409).contains(competition.get(0)),"save/submit serialization");
             check(scalar(c,"SELECT total_score FROM exam_attempts WHERE id=?",third)==(competition.get(0)==303?2:0),"grade reflects winning write");
             String last=begin.replace("previous=0","previous="+third);
             check(race(student,token+last,second,secondToken+last).equals(List.of(303,303)),"one slot remains");
             long fourth=scalar(c,"SELECT MAX(id) FROM exam_attempts WHERE exam_id=?",exam);
             String fourthPage=route+"?action=take&id="+fourth;
+            c.setAutoCommit(false);
+            try(var pool=Executors.newSingleThreadExecutor()){
+                sql(c,"UPDATE login_sessions SET revoked_at=UTC_TIMESTAMP(3) WHERE user_id=? AND revoked_at IS NULL",4L);
+                var pending=pool.submit(()->outsider.send(eventsRoute,other+signal+fourth).statusCode());
+                try{pending.get(250,TimeUnit.MILLISECONDS);throw new AssertionError("event should wait on session lock");}
+                catch(TimeoutException expected){c.commit();}
+                check(pending.get(20,TimeUnit.SECONDS)==302,"revocation wins pending event");
+            }finally{c.rollback();c.setAutoCommit(true);}
             check(second.send("logout",secondToken).statusCode()==302 && second.send(fourthPage,null).statusCode()==302,"logout during paper");
             sql(c,"DELETE FROM user_roles WHERE role_id=3 AND user_id=?",studentId);
+            check(student.send(eventsRoute,token+signal+fourth).statusCode()==302,"revoked role cannot report");
             check(student.send(fourthPage,null).statusCode()==302,"revoked last role invalidates session");
             sql(c,"INSERT INTO user_roles(user_id,role_id,assigned_at) VALUES(?,3,UTC_TIMESTAMP())",studentId);
             var restoredStudent=VerifyRoles.login("student@subject.invalid");
+            String reportingToken=csrf(restoredStudent);
             sql(c,"UPDATE login_sessions SET created_at=UTC_TIMESTAMP()-INTERVAL 1 HOUR,last_seen_at=UTC_TIMESTAMP()-INTERVAL 31 MINUTE WHERE user_id=? AND revoked_at IS NULL",studentId);
+            check(restoredStudent.send(eventsRoute,reportingToken+signal+fourth).statusCode()==302,"expired session cannot report");
             check(restoredStudent.send(fourthPage,null).statusCode()==302,"idle session expires");
             restoredStudent=VerifyRoles.login("student@subject.invalid");
+            reportingToken=csrf(restoredStudent);
             sql(c,"UPDATE users SET status='LOCKED' WHERE id=?",studentId);
+            check(restoredStudent.send(eventsRoute,reportingToken+signal+fourth).statusCode()==302,"locked account cannot report");
             check(restoredStudent.send(fourthPage,null).statusCode()==302,"locked student");
             sql(c,"UPDATE exam_attempts SET started_at=UTC_TIMESTAMP()-INTERVAL 2 MINUTE,deadline_at=UTC_TIMESTAMP()-INTERVAL 1 SECOND WHERE id=?",fourth);
             for(int i=0;i<45 && scalar(c,"SELECT graded_at IS NULL FROM exam_attempts WHERE id=?",fourth)==1;i++)Thread.sleep(500);

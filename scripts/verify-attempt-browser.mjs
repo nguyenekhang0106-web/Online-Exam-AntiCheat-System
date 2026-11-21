@@ -34,25 +34,83 @@ try{
     }
     async function evaluate(expression){const r=await call("Runtime.evaluate",{expression,returnByValue:true});if(r.exceptionDetails)throw Error("Browser evaluation failed");return r.result.value;}
     const navigate=path=>call("Page.navigate",{url:new URL(path,origin).href});
-    await call("Network.enable");await navigate("login");
+    await call("Page.enable");await call("Network.enable");await navigate("login");
     await until(()=>evaluate("!!document.querySelector('input[type=password]')"),"login form");
     await evaluate("document.querySelector('input[name=email]').value='student@subject.invalid';document.querySelector('input[type=password]').value="+JSON.stringify(password)+";document.querySelector('form').requestSubmit()");
     await until(()=>evaluate("location.pathname.endsWith('/account')"),"student login");
     await navigate("student/attempts?action=take&id="+id);
     const form="document.getElementById('q"+Number(question)+"')";
     const choice=n=>form+".querySelector('input[value=\""+Number(n)+"\"][name=option]')";
-    await until(()=>evaluate("!!"+form),"paper");
+    await call("Page.bringToFront");
+    await until(()=>evaluate("document.readyState==='complete' && !!"+form),"paper");
+    const monitored=await evaluate("document.querySelector('#monitor').dataset.focus==='true'");
+    let pasteResponses=0;
+    if(monitored){
+        const accepted=new Set(), codes=new Map();
+        const fields=new Set(["attempt","csrf","key","code","occurred"]);
+        let unexpectedField=false;
+        ws.addEventListener("message",event=>{
+            const msg=JSON.parse(event.data),p=msg.params;
+            if(msg.method==="Network.requestWillBeSent" && p.request.url.endsWith("/proctoring/events")){
+                const body=new URLSearchParams(p.request.postData);
+                if([...body.keys()].some(field=>!fields.has(field)))unexpectedField=true;
+                codes.set(p.requestId,body.get("code"));
+            }
+            if(msg.method==="Network.responseReceived" && [201,204].includes(p.response.status)){
+                accepted.add(codes.get(p.requestId));
+                if(codes.get(p.requestId)==="PASTE_ATTEMPT")pasteResponses++;
+            }
+        });
+        await call("Runtime.evaluate",{expression:"document.querySelector('#enter-fullscreen').click()",userGesture:true});
+        await until(()=>evaluate("!!document.fullscreenElement"),"enter fullscreen");
+        await evaluate("document.exitFullscreen();true");
+        await until(()=>accepted.has("FULLSCREEN_EXIT"),"fullscreen exit delivered");
+        await call("Runtime.evaluate",{expression:"getSelection().selectAllChildren("+form+".querySelector('fieldset p'));document.execCommand('copy')",userGesture:true});
+        await until(()=>accepted.has("COPY_ATTEMPT"),"copy delivered");
+        await evaluate(form+".dispatchEvent(new Event('paste',{bubbles:true}))");
+        await until(()=>accepted.has("PASTE_ATTEMPT"),"paste delivered");
+        const other=await call("Target.createTarget",{url:"about:blank"});
+        await call("Target.activateTarget",{targetId:other.targetId});
+        await pause(1200);
+        const nativeHidden=await evaluate("document.hidden");
+        await call("Page.bringToFront");
+        if(!nativeHidden && !accepted.has("TAB_HIDDEN") && ![...codes.values()].includes("TAB_HIDDEN")){
+            console.log("Headless tab visibility fallback: simulated visibility transition");
+            await evaluate("Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));delete document.hidden;document.dispatchEvent(new Event('visibilitychange'))");
+        }
+        await until(()=>accepted.has("TAB_HIDDEN"),"tab hidden delivered");
+        await call("Target.closeTarget",{targetId:other.targetId});
+        const beforeBlur=[...codes.values()].filter(code=>code==="WINDOW_BLUR").length;
+        await evaluate("window.dispatchEvent(new Event('focus'));for(let i=0;i<20;i++)window.dispatchEvent(new Event('blur'))");
+        await until(()=>accepted.has("WINDOW_BLUR"),"separate visible blur delivered");
+        if([...codes.values()].filter(code=>code==="WINDOW_BLUR").length>beforeBlur+1)throw Error("Repeated blur flooded intake");
+        if(unexpectedField)throw Error("Unexpected proctoring payload field");
+        console.log("PASS browser detector delivery: fullscreen, copy, paste, visibility and focus");
+    }
     for(const width of [390,1280]){
         await call("Emulation.setDeviceMetricsOverride",{width,height:800,deviceScaleFactor:1,mobile:false});
         if(!await evaluate("document.documentElement.scrollWidth<=innerWidth"))throw Error("Paper overflow");
     }
     await call("Network.emulateNetworkConditions",{offline:true,latency:0,downloadThroughput:-1,uploadThroughput:-1});
+    if(monitored)await evaluate(form+".dispatchEvent(new Event('paste',{bubbles:true}))");
     await evaluate(choice(wrong)+".click()");
     await until(()=>evaluate(form+".querySelector('output').textContent.includes('kết nối')"),"offline feedback");
     await call("Network.emulateNetworkConditions",{offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
     await evaluate(form+".requestSubmit()");
     await until(()=>evaluate(form+".querySelector('output').textContent==='Đã lưu'"),"retry save");
+    if(monitored){
+        await until(()=>pasteResponses===2,"offline event delivered on reconnect");
+        await call("Page.addScriptToEvaluateOnNewDocument",{source:"Object.defineProperty(document,'fullscreenEnabled',{value:false,configurable:true})"});
+    }
     await call("Page.reload");await until(()=>evaluate(choice(wrong)+".checked"),"restore after reload");
+    if(monitored){
+        await until(()=>evaluate("document.querySelector('#enter-fullscreen')?.hidden"),"unsupported fullscreen");
+        let paused=false;
+        ws.addEventListener("message",e=>{if(JSON.parse(e.data).method==="Fetch.requestPaused")paused=true;});
+        await call("Fetch.enable",{patterns:[{urlPattern:"*/student/proctoring/events",requestStage:"Request"}]});
+        await evaluate(form+".dispatchEvent(new Event('paste',{bubbles:true}))");
+        await until(()=>paused,"slow proctoring request pending");
+    }
     await evaluate(choice(correct)+".click()");
     await until(()=>evaluate(form+".querySelector('output').textContent==='Đã lưu'"),"autosave");
     await evaluate("document.querySelector('#confirm').click()");
