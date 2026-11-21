@@ -1,0 +1,2 @@
+<input type="hidden" name="csrf" value="<%=Html.escape(session.getAttribute("csrf"))%>">
+<input type="hidden" name="id" value="<%=k.getId()%>"><input type="hidden" name="version" value="<%=k.getUpdatedAt()%>">

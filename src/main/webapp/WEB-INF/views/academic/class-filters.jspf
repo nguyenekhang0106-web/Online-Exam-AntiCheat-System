@@ -1,0 +1,8 @@
+<%@ page pageEncoding="UTF-8" %>
+<form class="filters" method="get" id="filters">
+<% if(k!=null){ %><input type="hidden" name="id" value="<%=k.getId()%>"><% } %>
+<label><%=k==null?"Mã hoặc tên lớp":"Mã hoặc tên sinh viên"%><input name="q" maxlength="200" value="<%=Html.escape(q.term())%>"></label>
+<label>Trạng thái<select name="status"><option value="">Tất cả</option><% for(String state:k==null?new String[]{"ACTIVE","INACTIVE","ARCHIVED"}:new String[]{"ACTIVE","LEFT"}){ %>
+<option <%=state.equals(q.status())?"selected":""%>><%=state%></option><% } %></select></label>
+<label><%=k==null?"Theo mã lớp":"Theo tên sinh viên"%><select name="direction"><option value="ASC">Tăng dần</option><option value="DESC" <%=q.descending()?"selected":""%>>Giảm dần</option></select></label>
+<label>Số dòng<input name="size" type="number" min="1" max="100" value="<%=q.size()%>"></label><button>Tìm kiếm</button></form>
