@@ -32,7 +32,10 @@ public final class AttemptDao extends QuestionCatalogDao {
     }
     public Map<String,Object> lock(Connection c,long id,long student)throws SQLException{
         return one(c,"""
-            SELECT a.*,e.title,e.status exam_status,e.pass_percentage,e.grading_policy FROM exam_attempts a JOIN exams e ON e.id=a.exam_id
+            SELECT a.*,e.title,e.status exam_status,e.pass_percentage,e.grading_policy,
+            e.policy_snapshot_json->>'$.warn_on_focus_loss' monitor_focus,
+            e.policy_snapshot_json->>'$.require_fullscreen' monitor_fullscreen,
+            e.policy_snapshot_json->>'$.detect_paste' monitor_paste FROM exam_attempts a JOIN exams e ON e.id=a.exam_id
             WHERE a.id=? AND a.student_id=? FOR UPDATE
             """,id,student);
     }

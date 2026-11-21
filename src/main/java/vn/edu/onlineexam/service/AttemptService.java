@@ -14,7 +14,8 @@ public final class AttemptService {
     public AttemptService(JdbcUnitOfWork jdbc){this.jdbc=jdbc;}
     public record Admission(String title,long previous,int used,Integer limit,long open,String message){}
     public record Item(Map<String,Object> question,List<Map<String,Object>> options){}
-    public record Paper(long id,String title,String state,long seconds,List<Item> items){}
+    public record Paper(long id,String title,String state,long seconds,List<Item> items,boolean focus,boolean fullscreen,boolean paste){}
+    private static boolean policy(Map<String,Object> row,String key){return Set.of("true","1").contains(String.valueOf(row.get(key)));}
     private <T>T run(Access a,boolean student,JdbcUnitOfWork.Work<T> task)throws SQLException{
         if(a==null || a.actor()==null || (student && !"STUDENT".equals(a.role())) || !a.actor().roles().contains(a.role()))throw new SecurityException();
         try{return jdbc.transaction(c->{
@@ -89,7 +90,7 @@ public final class AttemptService {
                     for(var question:dao.questions(c,id))items.add(new Item(question,dao.options(c,id,num(question,"id"))));
                 }
             }
-            return new Paper(id,(String)attempt.get("title"),state,seconds,items);
+            return new Paper(id,(String)attempt.get("title"),state,seconds,items,policy(attempt,"monitor_focus"),policy(attempt,"monitor_fullscreen"),policy(attempt,"monitor_paste"));
         });
     }
     public long save(Access a,long id,long question,long revision,Set<Long> selected)throws SQLException{

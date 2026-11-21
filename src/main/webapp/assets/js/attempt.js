@@ -41,6 +41,7 @@ document.querySelector("#confirm").addEventListener("click", async event => {
         dirty.values().next().value.scrollIntoView();
         return;
     }
+    window.dispatchEvent(new Event("attempt:leaving"));
     location.assign(target);
 });
 const timer = document.querySelector("#remaining");
