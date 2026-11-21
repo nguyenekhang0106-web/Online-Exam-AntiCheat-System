@@ -1,12 +1,8 @@
-main { overflow-wrap: anywhere; }
-.filters { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; }
-label, .subject-form { display: grid; gap: .35rem; }
-.subject-form { max-width: 36rem; gap: 1rem; }
-input, select, textarea, button { font: inherit; padding: .45rem; min-width: 0; max-width: 100%; box-sizing: border-box; }
-.results { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; }
-th, td { text-align: left; padding: .6rem; border-bottom: 1px solid #ccc; }
-dt { font-weight: bold; }
-dd { margin: .2rem 0 1rem; }
-.description { white-space: pre-wrap; }
-.class-roster { min-width: 42rem; overflow-wrap: normal; }
+/* Module-specific fine-tuning built on top of app.css */
+.subject-form {
+  max-width: 42rem;
+}
+
+.class-roster {
+  min-width: 40rem;
+}

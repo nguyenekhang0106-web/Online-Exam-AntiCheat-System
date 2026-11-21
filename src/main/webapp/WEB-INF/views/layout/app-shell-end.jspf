@@ -1,0 +1,6 @@
+<%@ page pageEncoding="UTF-8" %>
+    </main>
+  </div>
+</div>
+<div class="sidebar-backdrop" data-nav-backdrop></div>
+<script src="<%=request.getContextPath()%>/assets/js/ui.js" defer></script>
