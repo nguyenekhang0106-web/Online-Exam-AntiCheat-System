@@ -9,9 +9,11 @@
     [switch]$ClassMysql,
     [switch]$CatalogMysql,
     [switch]$ExamMysql,
+    [switch]$AttemptMysql,
     [switch]$InteractivePasswords
 )
 $ErrorActionPreference = 'Stop'
+
 if ($ExamMysql) { $CatalogMysql = $true }
 $root = Split-Path $PSScriptRoot -Parent
 $base = Join-Path $root 'target/tomcat-smoke'
@@ -92,11 +94,11 @@ try {
         }
     }
     Write-Output 'PASS create/edit guest redirects and POST missing/invalid CSRF'
-    if ($RoleMysql -or $SubjectMysql -or $OfferingMysql -or $EnrollmentMysql -or $ClassMysql -or $CatalogMysql) {
+    if ($AttemptMysql -or $RoleMysql -or $SubjectMysql -or $OfferingMysql -or $EnrollmentMysql -or $ClassMysql -or $CatalogMysql) {
         $classes = Join-Path $root 'target/role-check'
         New-Item -ItemType Directory -Force $classes | Out-Null
         $cp = "$root/target/classes;$root/target/online-exam/WEB-INF/lib/*;$classes"
-        & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -cp $cp -d $classes "$root/scripts/VerifyRoles.java" "$root/scripts/AcceptAuth.java" "$root/scripts/VerifySubjects.java" "$root/scripts/VerifyOfferings.java" "$root/scripts/VerifyEnrollments.java" "$root/scripts/VerifyClasses.java" "$root/scripts/VerifyQuestionCatalog.java" "$root/scripts/VerifyExams.java"
+        & "$env:JAVA_HOME/bin/javac.exe" -encoding UTF-8 -cp $cp -d $classes "$root/scripts/VerifyRoles.java" "$root/scripts/AcceptAuth.java" "$root/scripts/VerifySubjects.java" "$root/scripts/VerifyOfferings.java" "$root/scripts/VerifyEnrollments.java" "$root/scripts/VerifyClasses.java" "$root/scripts/VerifyQuestionCatalog.java" "$root/scripts/VerifyExams.java" "$root/scripts/VerifyAttempts.java"
         if ($LASTEXITCODE) { throw 'Role test compilation failed' }
         $suite = if ($SubjectMysql -or $OfferingMysql -or $EnrollmentMysql -or $ClassMysql -or $CatalogMysql) { 'VerifySubjects' } else { 'VerifyRoles' }
         $options = @("$Port")
@@ -105,6 +107,7 @@ try {
         elseif ($EnrollmentMysql) { $options += 'enrollments' }
         elseif ($OfferingMysql) { $options += 'offerings' }
         if ($ExamMysql) { $options += 'exams' }
+        if ($AttemptMysql) { $suite = 'VerifyAttempts'; $options = @("$Port") }
         & "$env:JAVA_HOME/bin/java.exe" -cp $cp $suite @options
         if ($LASTEXITCODE) { throw 'Role acceptance failed' }
     }
