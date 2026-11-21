@@ -9,8 +9,8 @@
 | 2B.1 · Danh sách tài khoản | PARTIAL | Đã triển khai GET /admin/users. MySQL SELECT và smoke HTTP khách đạt. Còn xác minh trang kết quả với phiên ADMIN thật và 403 cho hai vai trò còn lại qua HTTP. |
 | 3 · Ngân hàng câu hỏi | PARTIAL | 3A hoàn thành; 3B–3C đã nghiệm thu phạm vi chủ sở hữu. Đọc SHARED của chủ khác còn chờ quyết định. Xem biên bản giai đoạn 3 bên dưới. |
 | 4 · Đề và phân công | PARTIAL | Đã triển khai cấu hình, biên soạn và lịch thi. Xem biên bản giai đoạn 4 bên dưới. |
-| 5 · Làm bài | Chưa triển khai | Hai request start đồng thời chỉ tạo một lượt. Autosave đúng option, giữ thứ tự sau khi resume. |
-| 6 · Kết quả | Chưa triển khai | Submit lặp chỉ chấm một lần, độ chính xác DECIMAL, quyền xem và điều chỉnh điểm có audit. |
+| 5 · Làm bài | PARTIAL | Đã tích hợp cấp lượt, snapshot, autosave, nộp và hết giờ. Hai quyết định về quyền dự thi còn mở. |
+| 6 · Kết quả | PARTIAL | Đã tích hợp chấm ALL_OR_NOTHING và xem điểm vào luồng nộp của giai đoạn 5. Công bố MANUAL và điều chỉnh điểm chưa triển khai. |
 | 7 · Giám sát | Chưa triển khai | Retry event không nhân đôi, kiểm tra quyền tải evidence, lưu reviewer và lý do. |
 | 8 · Phúc khảo và báo cáo | Chưa triển khai | Đơn đúng chủ lượt, thông báo đúng người, báo cáo khớp policy chọn lượt. |
 
@@ -254,3 +254,66 @@ Ghi dữ liệu dùng POST/CSRF/PRG, xác minh phiên và vai trò trong transac
 - PASS hồi quy VerifyAuth, VerifyUserWrites, VerifyJdbcTransaction, VerifyUserDirectory, VerifyRoles, VerifySubjects, VerifyOfferings, VerifyEnrollments, VerifyClasses, VerifyQuestionCatalog. VerifyUserDirectory đọc dữ liệu dev bằng SELECT; các bài thử ghi dùng fixture cô lập hoặc JDBC giả lập.
 - PASS scripts/verify-exam-layout.ps1 trên Edge headless: danh sách, đề nháp, phân công, lịch sinh viên ở 390 và 1280 px (8/8 không tràn ngang). HTML dùng trong kiểm tra lấy từ Tomcat và bỏ giá trị CSRF trước khi lưu vào target. Lần chạy đầu phát hiện JSP fragment sai encoding; sau khi khai báo UTF-8 từng file, ca HTTP tiếng Việt và bộ hồi quy chạy thành công.
 - NOT RUN thao tác cảm ứng trên thiết bị vật lý, phân phối tệp câu hỏi thật, kiểm tra tải lớn hoặc quá trình bắt đầu/chấm lượt thi. Trạng thái các giai đoạn 1–3 giữ theo biên bản trước.
+
+## Giai đoạn 5 · Làm bài và tích hợp chấm khi nộp
+
+Roadmap chính thức đặt Làm bài ở giai đoạn 5 và Chấm và công bố ở giai đoạn 6. Các mã 5A–5C dưới đây là phạm vi bàn giao chung của lượt triển khai này.
+
+| Module | Trạng thái | Phạm vi bàn giao |
+|---|---|---|
+| 5A · Cấp và tiếp tục lượt | PARTIAL | Sinh viên có đúng một phân công hiệu lực, đề PUBLISHED và cấu hình được hỗ trợ có thể bắt đầu. Mở lại trả về cùng lượt. Nhiều phân công cùng hiệu lực, lịch sử CANCELLED hoặc INVALIDATED cần quyết định của nhóm trước khi cấp lượt mới. |
+| 5B · Làm bài | COMPLETED cho trắc nghiệm đã nghiệm thu | Ghim phiên bản và thứ tự khi bắt đầu. Có radio/checkbox, điều hướng câu, đồng hồ, trạng thái lưu, autosave, lưu thủ công và khôi phục khi tải lại. |
+| 5C · Nộp, chấm và xem kết quả | PARTIAL | Nộp thủ công hoặc tự nộp khi hết giờ, xử lý tập lựa chọn, chấm đúng toàn bộ, xét đạt và chọn điểm giữa các lượt. PARTIAL_CREDIT và công bố MANUAL cần chính sách được duyệt. |
+
+**Đường dẫn.** Từ /student/schedule chọn “Kiểm tra quyền vào thi”. GET /student/attempts?action=start&exam=… hiển thị tình trạng và giới hạn. POST start giữ khóa hàng sinh viên, đề và phân công/ghi danh. Event ATTEMPT_START lưu loại và ID phân công trong audit_logs.detail_json. Các lần mở bài, lưu và nộp trước hạn kiểm tra lại đúng phân công đó. Lượt cũ thiếu dấu nguồn phân công không tự chuyển sang phân công khác. Số lượt tính theo cặp exam_id/student_id; override của đúng một phân công hoặc mặc định đề. Số thứ tự là max(attempt_no)+1. ID lượt gần nhất trên form được so với DB dưới khóa, để retry form cũ sau khi đã nộp không cấp một lượt mới. Lịch cá nhân ngoài cửa sổ chặn fallback sang lớp theo hợp đồng. Khi nhiều phân công cùng hợp lệ, yêu cầu hiện tại của nhóm ưu tiên chặn an toàn.
+
+**Trong lượt.** GET /student/attempts?action=take&id=… dùng attempt_questions → exam_questions → question_versions và attempt_option_orders. Thứ tự được trộn một lần và lưu trong cùng transaction tạo lượt. Deadline UTC là mốc sớm hơn giữa thời điểm bắt đầu cộng thời lượng và giờ đóng phân công. POST save chỉ chấp nhận lựa chọn thuộc snapshot, kiểm tra chủ sở hữu, phiên, quyền còn hiệu lực, trạng thái và deadline. Audit ID của lần lưu câu là dấu phiên bản. Retry cùng tập chọn là idempotent, request cũ có tập chọn khác bị trả 409. Trình duyệt tuần tự hóa autosave từng câu và báo khi cần thử lại.
+
+**Nộp và chấm.** Trang xác nhận dùng GET action=confirm. POST submit khóa lượt, so sánh tập chọn với đáp án của phiên bản ở server, chấm từng câu trên points_snapshot và ghi điểm chi tiết, tổng điểm, phần trăm, điều kiện đạt, trạng thái cùng audit trong một transaction. Câu bỏ trống được 0; câu nhiều lựa chọn phải đúng toàn bộ tập. Timeout do server quyết định. Bộ xử lý của Tomcat kiểm tra theo lô 50 lượt mỗi 15 giây, tự nộp khi trình duyệt đã đóng và tiếp tục quét khi ứng dụng khởi động lại. Trong thời gian máy chủ dừng, trạng thái có thể chờ xử lý; yêu cầu lưu đến muộn vẫn bị từ chối.
+
+**Kết quả.** GET /student/attempts, /teacher/attempts và /admin/attempts. HIGHEST chọn điểm lớn nhất, hòa chọn attempt_no nhỏ nhất; LATEST/FIRST dùng thứ tự lượt. Chỉ xét lượt đã nộp và có điểm. IMMEDIATE hiển thị ngay; AFTER_CLOSE xét cửa sổ còn lại của chính sinh viên và lượt đang mở; MANUAL giữ ẩn. Bài làm và lịch sử sinh viên không trả khóa đáp án/lời giải. Giáo viên xem đề sở hữu. Với ADMIN, schema chưa có quan hệ giao nhiệm vụ tra cứu độc lập, nên truy vấn chỉ trả đề có created_by trùng người xem; quyền tra cứu rộng hơn cần nhóm xác nhận.
+
+**File.** dao/AttemptDao.java (truy vấn, snapshot, câu trả lời, điểm); service/AttemptService.java (quyền, giao dịch, deadline), service/AttemptExpiry.java (vòng đời bộ xử lý timeout); controller/AttemptServlet.java; WEB-INF/views/attempt/{start,take,confirm,history}.jsp; assets/js/attempt.js. account.jsp và exam/calendar.jspf thêm điều hướng. Bộ kiểm thử gồm scripts/VerifyAttempts.java, scripts/verify-attempt-browser.mjs, scripts/smoke-test.ps1 và scripts/verify-exam-layout.ps1.
+
+**Chạy lại.** Build bằng Maven Wrapper clean package. Chuẩn bị schema fixture rỗng riêng V1–V7 tại 127.0.0.1:13367/role_test_<32 hex>, dùng credential thử và JAVA_HOME trong tiến trình. Chạy scripts/smoke-test.ps1 -TomcatHome <Tomcat10.1> -Port <cổng trống> -AttemptMysql. Đặt ATTEMPT_BROWSER=1 để chạy thêm Node 24 và Edge headless trên ứng dụng thật. Sau suite chạy scripts/verify-exam-layout.ps1 -Attempts. Suite -ExamMysql dùng một schema rỗng khác cho hồi quy 2–4.
+
+### Biên bản nghiệm thu 21/11/2026
+
+- PASS Maven Wrapper clean package, javac release 21, target/online-exam.war. Surefire không có test; kết quả tích hợp đến từ các script chạy riêng sau khi build.
+- PASS MySQL 9.6 cô lập ở 127.0.0.1:13367 và HTTP qua Tomcat 10.1 ở 127.0.0.1:18085. Đã kiểm tra start hợp lệ, đề nháp, đề dùng PARTIAL_CREDIT, thiếu phân công, ngoài giờ, chồng phân công, trường hợp CANCELLED, override và hết lượt. Hai phiên độc lập cùng start khi chỉ còn một lượt đều đi đến cùng lượt thi. Khi transaction thu hồi phân công hoặc đổi trạng thái enrollment đang giữ khóa, start chờ commit và bị từ chối.
+- PASS snapshot câu và phương án, thứ tự sau reload, lưu lại lựa chọn, lặp request, revision cũ, sai câu/option, option của câu khác, truy cập chéo sinh viên và POST sai CSRF. Thay nguồn phân công giữa lượt, logout, thu hồi vai trò, khóa tài khoản và phiên hết hạn đều chặn truy cập. Đã kiểm tra quyền qua HTTP thật của ba vai trò.
+- PASS hai submit đồng thời chỉ chấm một lần. Khi save cạnh tranh với submit, điểm cuối khớp với thao tác thắng khóa. Các lỗi ghi thứ tự phương án, điểm chi tiết hoặc audit được kích hoạt có chủ đích trong schema thử và rollback. Lượt chấm một câu đơn đúng và câu đa chọn đủ hai đáp án được 5/5; chọn sai hoặc thiếu đáp án được 0. Lượt bỏ trống được tự chấm 0 sau deadline, kể cả khi không còn trình duyệt hoặc phiên hợp lệ. FIRST, LATEST, HIGHEST và ba chế độ hiển thị điểm đều có ca kiểm thử.
+- PASS Edge headless trên ứng dụng thật: ngắt mạng khi đổi lựa chọn, hiển thị lỗi, kết nối lại, thử lưu, reload khôi phục lựa chọn, autosave và điều hướng xác nhận nộp. Thêm 8/8 phép đo chống tràn ngang trên HTML bắt đầu/làm bài/xác nhận/lịch sử tại 390 và 1280 px.
+- PASS hồi quy VerifyAuth, VerifyUserWrites, VerifyJdbcTransaction, VerifyUserDirectory, VerifyRoles, VerifySubjects, VerifyOfferings, VerifyEnrollments, VerifyClasses, VerifyQuestionCatalog và VerifyExams. Các bài ghi dùng fixture hoặc JDBC giả lập. VerifyUserDirectory chỉ SELECT trên dev. Suite lượt thi dùng fixture đăng nhập riêng sau khi lần chạy ghép ban đầu gặp giới hạn tần suất đăng nhập của ứng dụng.
+- NOT RUN thiết bị cảm ứng vật lý, tải lớn nhiều sinh viên và vận hành nhiều node Tomcat. MANUAL hiện được kiểm tra ở trạng thái ẩn; chưa có cơ chế phê duyệt công bố thủ công. PARTIAL_CREDIT, quyền ADMIN ngoài đề có bằng chứng phụ trách, chính sách chồng phân công và cách tính lượt hủy/vô hiệu cần nhóm chốt. Chưa triển khai điều chỉnh điểm, phân phối attachment hoặc giám sát.
+
+
+## Bổ sung 5D · Đánh giá trước khi phê duyệt V8
+
+V4 lưu hai cờ đảo thứ tự nhưng thiếu cấu hình chế độ chọn câu và số câu cần rút trên exams. Với FIXED, giáo viên thêm thủ công 40 câu từ ngân hàng 50 câu vào đề nháp ở /teacher/exams rồi công bố. exam_questions ghim question_version_id, points và fixed_order. Service chặn sửa nội dung câu đã công bố và chặn đổi trạng thái câu đã được đề tham chiếu. Không bổ sung câu nguồn từ ngân hàng sau publish.
+
+V5 đủ để lưu tập thực nhận. Khi bắt đầu lượt, AttemptDao.snapshot hiện sao chép toàn bộ tập đã cấu hình vào attempt_questions, gồm exam_question_id, display_order và points_snapshot. attempt_option_orders lưu thứ tự phương án. Reload đọc snapshot cũ. Chấm điểm cộng points_snapshot của các câu thuộc lượt; tổng tối đa được xác định bởi snapshot và ghi vào exam_attempts.max_score khi chấm.
+
+Đề xuất tối thiểu cho V8 (chưa tạo hoặc chạy): bổ sung vào exams một cột chế độ bắt buộc mặc định FIXED và một cột số câu nguyên cho phép NULL. Ràng buộc FIXED đi với NULL; RANDOM_PER_ATTEMPT đi với số dương. Service kiểm tra số cần rút không vượt số question_id khác nhau đủ điều kiện khi lưu cấu hình và dưới khóa khi publish. Các đề cũ tiếp tục dùng toàn bộ exam_questions. Giữ nguyên 34 bảng, quan hệ phiên bản và snapshot; không dùng JSON chính sách để lưu cấu hình này.
+
+Sau khi được duyệt: giáo viên chọn 50 phiên bản nguồn khi đề còn nháp, đặt chế độ ngẫu nhiên và số cần rút 40. Trong transaction cấp lượt mới, server lấy mẫu không hoàn lại bằng SecureRandom. Nếu tắt đảo thứ tự, sắp lại các câu trúng theo fixed_order trước khi lưu. Resume không lấy mẫu. Với nguồn có điểm khác nhau và rút ít hơn tổng số câu, tổng tối đa giữa các lượt có thể khác nhau; HIGHEST hiện so total_score. Cần chốt quy tắc trước khi cho phép trường hợp đó. Phương án ban đầu đề xuất là chỉ cho rút tập con từ nguồn đồng điểm.
+
+Nghiệm thu 5D: NOT RUN build, MySQL, HTTP, concurrency/rollback và responsive cho tính năng mới do dừng ở bước phê duyệt schema. Biên bản 4–5C là bằng chứng cho luồng hiện có. Khi kiểm thử FIXED với hai tài khoản STUDENT trên fixture cô lập, cấp mỗi người đúng một phân công hiệu lực, bắt đầu từ /student/schedule, đối chiếu tập exam_question_id của hai lượt với đúng 40 dòng đã chọn. Ghi lại display_order của câu/phương án trước và sau tải lại. Với RANDOM sau triển khai, đối chiếu mỗi lượt có đúng 40 question_id khác nhau thuộc 50 nguồn, chấm trên 40 snapshot; không yêu cầu hai lượt phải khác nhau. Giữ nguyên trạng thái 5A và 5C.
+
+### 5D sau phê duyệt V8 · Chọn câu theo từng lượt
+
+V8 thêm exams.selection_mode và exams.question_count. Đề có trước V8 nhận FIXED và NULL. Build/deploy WAR không tự nâng schema. V8 mới được chạy trên MySQL cô lập; online_exam_dev cần quyết định triển khai riêng trước khi dùng bản WAR này.
+
+**Thực hành với hai sinh viên.** Tại /online-exam/teacher/exams, tạo đề nháp và chọn môn. Với FIXED, thêm đúng 40 phiên bản trong ngân hàng 50 câu. Với RANDOM_PER_ATTEMPT, thêm cả 50 câu làm tập nguồn với cùng trọng số, lưu cấu hình “Ngẫu nhiên mỗi lượt”, số câu 40, rồi công bố. Có thể khai báo mục tiêu số câu khi tạo nháp; publish luôn kiểm tra lại toàn bộ nguồn. Phân công cho mỗi sinh viên đúng một cửa sổ hiệu lực. Mở hai phiên trình duyệt độc lập, vào /online-exam/student/schedule và bắt đầu thi. Kiểm tra 40 câu mỗi lượt, tải lại rồi đăng xuất/đăng nhập lại. Nếu có lượt thứ hai, đối chiếu theo ID lượt; hai tổ hợp ngẫu nhiên tình cờ giống nhau vẫn hợp lệ.
+
+**Kỹ thuật.** ExamService khóa đề, kiểm tra quyền, phiên bản, số câu và trọng số trước công bố. exam_questions cố định tập nguồn theo question_version_id. AttemptDao dùng SecureRandom lấy mẫu không hoàn lại trong transaction cấp lượt mới. Khi tắt trộn câu, sắp tập đã rút theo fixed_order. attempt_questions và attempt_option_orders lưu tập đã cấp và thứ tự thực tế. Luồng resume dùng snapshot cũ; autosave và chấm điểm chỉ đọc các câu của lượt. Tổng điểm tối đa của ví dụ bằng 40 nhân trọng số chung. Chính sách nhiều phân công và lượt hủy của 5A, công bố điểm của 5C giữ theo biên bản trước.
+
+**File thuộc 5D.** database/migrations/V8__add_exam_question_selection.sql, ExamDao.java, ExamQuestionDao.java, ExamService.java, ExamServlet.java, AttemptDao.java, exam/config.jspf, exam/detail.jsp, scripts/VerifyAttempts.java, README.md và tài liệu tiến độ này.
+
+
+**Nghiệm thu 21/11/2026 — 5D COMPLETED.**
+- PASS Maven Wrapper clean package (release 21). PASS nâng một đề PUBLISHED có trước V8 trên MySQL 9.6 scratch cổng 13368: mode FIXED, count NULL, giữ thời lượng, trạng thái và số lượt.
+- PASS MySQL 9.6 scratch cổng 13367 và Tomcat 10.1 cổng 18085 với hai sinh viên. FIXED chọn 40 từ 50; RANDOM chọn 40 từ nguồn 50. Kiểm tra đủ 40 question_id phân biệt, thuộc nguồn theo từng chế độ, nội dung HTML chỉ có 40 câu, khóa đáp án/lời giải ẩn. Hai request start cùng sinh viên cho đúng một lượt; lượt thứ hai có snapshot riêng. Không dùng kiểm tra xác suất yêu cầu các lượt phải khác nhau.
+- PASS từ chối rút 0, rút 51/50 và nguồn khác trọng số. Chèn lỗi ghi attempt_questions hoặc audit làm rollback toàn bộ. Lựa chọn của câu không được cấp bị từ chối. Một câu đúng trong 40 câu đồng điểm cho kết quả 1/40, nộp lặp giữ nguyên kết quả. Đăng nhập lại tiếp tục đúng tập và thứ tự; Edge thật xác minh mất mạng, retry autosave, reload và xác nhận nộp trên lượt ngẫu nhiên.
+- PASS hồi quy giai đoạn 4 và 5 gồm VerifyExams, VerifyAttempts, bộ role/học vụ/ngân hàng, thu hồi phiên, transaction và audit. PASS Edge 390/1280 px trên 4 trang quản lý/lịch và 4 trang lượt thi. NOT RUN thiết bị cảm ứng vật lý và tải lớn. Các blocker trước đây của 5A/5C giữ nguyên.
+- Chạy lại bằng suite -AttemptMysql với schema scratch rỗng V1–V8 theo hướng dẫn giai đoạn 5; đặt ATTEMPT_BROWSER=1 để kiểm thử mất mạng trong Edge. Dùng schema rỗng riêng cho -ExamMysql.
