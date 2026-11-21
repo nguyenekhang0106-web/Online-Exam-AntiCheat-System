@@ -7,7 +7,7 @@
 | 2 · Admin và đào tạo | Chưa triển khai | Kiểm tra phân quyền, ghi danh, khóa tài khoản, rollback và audit. |
 | 2A · Authentication và phiên đăng nhập | COMPLETED | Chủ dự án xác nhận cả ba vai trò đã đăng nhập/đăng xuất thành công trên Tomcat + MySQL. TLS và timeout theo thời gian thực vẫn pending. |
 | 2B.1 · Danh sách tài khoản | PARTIAL | Đã triển khai GET /admin/users. MySQL SELECT và smoke HTTP khách đạt. Còn xác minh trang kết quả với phiên ADMIN thật và 403 cho hai vai trò còn lại qua HTTP. |
-| 3 · Câu hỏi | Chưa triển khai | Kiểm tra quyền bank, version bất biến, số đáp án đúng và file cùng version. |
+| 3 · Ngân hàng câu hỏi | PARTIAL | 3A hoàn thành; 3B–3C đã nghiệm thu phạm vi chủ sở hữu. Đọc SHARED của chủ khác còn chờ quyết định. Xem biên bản giai đoạn 3 bên dưới. |
 | 4 · Đề và phân công | Chưa triển khai | Publish nguyên tử, snapshot policy, kiểm tra cùng môn, cửa sổ và override. |
 | 5 · Làm bài | Chưa triển khai | Hai request start đồng thời chỉ tạo một lượt. Autosave đúng option, giữ thứ tự sau khi resume. |
 | 6 · Kết quả | Chưa triển khai | Submit lặp chỉ chấm một lần, độ chính xác DECIMAL, quyền xem và điều chỉnh điểm có audit. |
@@ -144,3 +144,79 @@ Roadmap xếp SubjectDao đầu nhóm học vụ của giai đoạn 2 (Admin và
 - PASS HTTP Tomcat 10.1 trên 18082 (18080 đang dùng). VerifySubjects kiểm tra danh sách, tạo/sửa, chi tiết, mã/tên bắt buộc, độ dài mã, tìm kiếm literal, sắp xếp/phân trang/lọc, escape HTML, bỏ qua id/status gửi thêm khi tạo, CSRF, quyền ba vai trò, guest, 404 khi thiếu môn hoặc ngoài phạm vi, archive và audit. VerifyRoles chạy cùng fixture và đạt cho login/logout, khóa/mở, vai trò, session và cạnh tranh ADMIN. Maven không tự chạy các script này.
 - Chạy lại bằng scripts/smoke-test.ps1 -TomcatHome <Tomcat-10.1> -Port 18082 -SubjectMysql với schema rỗng V1–V4, URL 127.0.0.1:13367/role_test_<32 hex thường> và credential test trong biến môi trường. VerifySubjects dùng bộ fixture VerifyRoles.
 - Chưa nghiệm thu trực quan desktop/mobile. Cần kiểm tra các trang danh sách, form lỗi, chi tiết và xác nhận lưu trữ trên hai kích thước màn hình. Chưa có fixture riêng cho từng FK topics/question_banks/exams hoặc trạng thái đăng ký WITHDRAWN/COMPLETED. Giữ các trạng thái 2B và 2C theo biên bản trước.
+
+## 2E · Quản lý lớp học phần — PARTIAL
+
+Roadmap quy định thứ tự các dòng giai đoạn. OfferingDao cùng thuộc dòng 2 với SubjectDao và SchoolClassDao; 2E dùng các lớp hành chính có sẵn. V2 yêu cầu subject_id, class_id, teacher_id, academic_year và semester. Chỉ id là duy nhất. Hai lần tạo cùng các thuộc tính vẫn tạo hai lớp học phần riêng.
+
+- GET /{admin,teacher,student}/offerings và .../offerings/detail?id=... đọc danh sách và chi tiết. Tìm mã/tên môn, mã/tên lớp và tên giáo viên; lọc subject/status, sắp xếp theo whitelist, 1–100 dòng/trang. Giáo viên xem theo teacher_id lấy từ danh tính đã xác thực. Sinh viên xem theo ghi danh ENROLLED hoặc COMPLETED; EXISTS tránh nhân bản hàng.
+- ADMIN dùng GET/POST /admin/offerings/new, GET/POST /admin/offerings/edit (đổi giảng viên của lớp ACTIVE), POST /admin/offerings/close. Khi mở form edit truyền id trong query. Filter xử lý session/CSRF. Service khóa ADMIN và kiểm tra lại phiên trong transaction ghi. Khi tạo, khóa môn/lớp ACTIVE và xác minh giảng viên ACTIVE có TEACHER. Chính sách chỉnh sửa theo hợp đồng chỉ cho phân công lại; giữ môn, lớp, năm và kỳ của bản ghi đã tạo.
+- Đóng lớp chuyển ACTIVE sang CLOSED, giữ các khóa ngoại, ghi số ghi danh và số phân công thi hiện hữu vào detail_json của audit. ARCHIVED là giá trị đọc/lọc. Khóa hàng offering và so phiên bản trước khi sửa; phiên bản dùng ID audit mới nhất của offering (0 cho dữ liệu cũ). Thay đổi và audit commit/rollback cùng nhau. Cơ chế này áp dụng cho các writer tuân thủ hợp đồng audit.
+- Tạo OfferingDao.java, OfferingManagementService.java, OfferingManagementServlet.java, model/OfferingPage.java, WEB-INF/views/academic/offering-{list,form,detail}.jsp và scripts/VerifyOfferings.java. Sửa account.jsp, scripts/smoke-test.ps1, scripts/VerifySubjects.java và tài liệu tiến độ. VerifySubjects chuyển fixture/session đã xác minh sang VerifyOfferings khi bật tùy chọn riêng.
+- PASS Maven Wrapper clean package (Java release 21). PASS giả lập VerifyAuth, VerifyUserWrites và VerifyJdbcTransaction; VerifyUserDirectory chỉ SELECT trên dev. PASS MySQL Server 9.6 riêng trên 127.0.0.1:13367 và HTTP Tomcat 10.1 trên 18082. Chạy lại VerifyRoles, VerifySubjects và VerifyOfferings. Bao gồm dữ liệu trùng theo V2, môn thiếu/archived, teacher không hợp lệ, validation, quyền theo bản ghi, guest, CSRF, escape HTML, tìm wildcard literal, sort ngoài whitelist, hai ADMIN cạnh tranh, cập nhật thiếu/cũ, rollback khi audit lỗi, đóng lớp có sinh viên và bảo toàn quyền đọc môn. Test xác minh audit đóng lớp với 1 ghi danh và 0 phân công thi.
+- PASS bố cục Edge headless từ HTML trả về bởi Tomcat với CSS dự án, đã bỏ trường CSRF. Bốn trang list/detail/new/edit không tràn chiều ngang viewport 390 và 1280 px. Đã xem ảnh form mobile và danh sách desktop. Chưa thao tác tương tác trên thiết bị cảm ứng thật hoặc kiểm tra đóng lớp có phân công thi khác 0.
+- Chạy lại với schema test rỗng theo điều kiện VerifyRoles, V1–V4, DB_URL/DB_USER/DB_PASSWORD riêng, rồi dùng scripts/smoke-test.ps1 -TomcatHome <Tomcat-10.1> -Port <cổng trống> -OfferingMysql sau khi build WAR. Giữ nguyên trạng thái nghiệm thu 2B–2D.
+
+## 2F · Quản lý ghi danh sinh viên — PARTIAL
+
+EnrollmentDao thuộc dòng 2 của roadmap, sau OfferingDao. Bảng course_enrollments có khóa chính (offering_id, student_id); V2 không đặt sĩ số tối đa. Hợp đồng cho ADMIN ghi danh/rút/hoàn thành, TEACHER đọc danh sách lớp phụ trách, STUDENT đọc lịch sử của mình. Lớp hành chính của sinh viên không phải điều kiện ghi danh trong hợp đồng.
+
+- GET /{admin,teacher,student}/enrollments: tìm theo mã/tên/email, lọc offering và status, sắp xếp và phân trang. GET .../enrollments/detail?offering=…&student=… kiểm tra phạm vi ngay trong SQL. GET/POST /admin/enrollments/new, POST /admin/enrollments/withdraw và /admin/enrollments/complete. POST dùng CSRF và 303 sau khi thành công.
+- Tạo ENROLLED cho tài khoản ACTIVE có STUDENT, lớp và môn ACTIVE. Chỉ chuyển ENROLLED sang WITHDRAWN hoặc COMPLETED. Khóa chính ngăn cấp lại cặp đã có kể cả sau khi rút. Điều kiện UPDATE theo trạng thái hiện tại chặn form cũ. STUDENT vẫn thấy lịch sử WITHDRAWN ở module này; 2D/2E chỉ cấp quyền đọc môn/lớp theo ENROLLED hoặc COMPLETED.
+- Transaction kiểm tra ADMIN và phiên, khóa user sinh viên rồi khóa offering/môn. Khóa offering phối hợp với 2E; khóa user cùng quy ước bắt đầu lượt thi. Mỗi thay đổi có audit cùng transaction, lưu cả hai ID. Kiểm tra phân công lớp của đề PUBLISHED đang mở trước khi kết thúc ghi danh, xét ưu tiên phân công cá nhân. Với đề liên kết đã có lượt của sinh viên, Service chặn thay đổi vì exam_attempts không ghi offering nguồn. Đây là cách bảo toàn lịch sử khi có nhiều đường cấp quyền.
+- File mới: EnrollmentDao.java, EnrollmentManagementService.java, EnrollmentServlet.java, model/EnrollmentPage.java, WEB-INF/views/academic/enrollment-{list,form,detail}.jsp, scripts/VerifyEnrollments.java. Sửa account.jsp, scripts/smoke-test.ps1, scripts/VerifySubjects.java và tài liệu này.
+
+| Nhóm kiểm tra | Kết quả |
+|---|---|
+| Maven Wrapper clean package | PASS, javac release 21, WAR. Các script dưới scripts chạy riêng. |
+| Giả lập và hồi quy | PASS VerifyAuth, VerifyUserWrites, VerifyJdbcTransaction. VerifyUserDirectory đạt với SELECT trên dev. |
+| MySQL 9.6 cô lập 13367 và Tomcat 10.1 cổng 18082 | PASS VerifyRoles, VerifySubjects, VerifyOfferings và VerifyEnrollments với fixture V1–V5 và phiên HTTP thật. Bao gồm đăng ký trùng đồng thời 303/409, đóng lớp song song ghi danh, phát hiện ghi danh đã kết thúc, rollback khi audit lỗi, bảo vệ quyền thi đang mở và lượt thi, từ chối đối tượng ngoài phạm vi, CSRF, escape HTML, kiểm tra bộ lọc và thứ tự sắp xếp. |
+| Tích hợp 2D/2E | PASS WITHDRAWN vẫn có lịch sử nhưng mất quyền đọc môn/lớp từ ghi danh này, COMPLETED giữ quyền đọc. Đóng lớp có một phân công thi và ghi danh thực tế giữ bản ghi, audit ghi chính xác số lượng cả hai. Các trạng thái nghiệm thu trước giữ nguyên. |
+| Bố cục | PASS Edge headless trên HTML thực từ Tomcat, đã loại CSRF, dùng CSS dự án. List, form và detail vừa chiều rộng 390 và 1280 px. Đã xem ảnh form mobile và danh sách desktop. |
+| Nghiệm thu còn lại | NOT RUN thao tác trực tiếp trên thiết bị cảm ứng và fixture kiểm chứng riêng phân công cá nhân chồng cửa sổ phân công lớp khi đổi ghi danh. |
+
+Chạy lại với schema fixture rỗng V1–V5 trên loopback 13367, tên role_test_<32 ký tự hex thường> theo điều kiện VerifyRoles, khai báo DB_URL/DB_USER/DB_PASSWORD riêng. Sau khi build, dùng scripts/smoke-test.ps1 -TomcatHome <Tomcat-10.1> -Port <cổng trống> -EnrollmentMysql. Script chạy cả các suite 2C/2D/2E trước 2F. MySQL test tách riêng khỏi online_exam_dev.
+
+## 2G · Lớp hành chính và thành viên lớp
+
+Hai module còn thiếu ở dòng 2 của crud-roadmap là SchoolClassDao và ClassStudentDao. 2G là mã tiểu giai đoạn dùng cho gói này. Ngân hàng câu hỏi thuộc dòng 3. Trạng thái riêng của 2B–2F giữ theo các mục trước.
+
+| Module | Trạng thái | Bằng chứng nghiệm thu |
+|---|---|---|
+| Quản lý lớp hành chính | COMPLETED | MySQL và HTTP thật: thêm, sửa, mã trùng, trường bắt buộc, tra cứu, lọc/tìm, phân trang, quyền theo vai trò, hai cập nhật cạnh tranh, rollback audit, archive giữ thành viên và lớp học phần đang tham chiếu. |
+| Quản lý thành viên lớp | COMPLETED | MySQL và HTTP thật: thêm, rời, tái gia nhập, trùng khóa kép, hai request thêm đồng thời, thao tác sai, ID thiếu bản ghi, giảng viên đọc đúng lớp, sinh viên chỉ thấy bản thân, lịch sử vẫn truy cập được và audit giữ thời điểm rời trước khi tái gia nhập. |
+
+**Sử dụng.** Từ trang tài khoản chọn Lớp hành chính. GET /{admin,teacher,student}/classes tra cứu theo mã/tên, trạng thái, thứ tự mã và phân trang. GET .../classes/detail?id=… xem chi tiết và danh sách thành viên, lọc theo mã/tên, trạng thái, sắp theo tên và phân trang. GET/POST /admin/classes/new, GET/POST /admin/classes/edit, POST /admin/classes/archive. POST /admin/classes/membership nhận join, leave hoặc rejoin. Khi thêm dùng ID tài khoản sinh viên. Filter bảo vệ route và CSRF; sau POST thành công trả 303.
+
+**Quan hệ và quyền.** ADMIN quản lý lớp và quan hệ thành viên; khi thêm hoặc tái gia nhập, cả lớp và tài khoản STUDENT phải ACTIVE. TEACHER đọc lớp có course_offerings.teacher_id của mình. STUDENT đọc lớp từng có quan hệ class_students và chỉ thấy tư cách cá nhân. Thay đổi thành viên lớp hành chính không tự ghi danh lớp học phần. Archive cập nhật classes.status. Khóa chính (class_id,student_id) giữ một quan hệ xuyên các lần rời/tái gia nhập. LEFT có left_at; lần tái gia nhập mới cập nhật joined_at và xóa left_at, với khoảng thời gian cũ được giữ trong audit_logs.detail_json.
+
+**Transaction.** Service xác minh ADMIN và phiên trong transaction, khóa hàng lớp và so updated_at từ form. Thao tác thành viên khóa thêm user và cập nhật phiên bản lớp. Điều kiện trạng thái trên UPDATE, khóa kép, UNIQUE(class_code) và audit cùng transaction bảo vệ cả trường hợp retry và ghi đồng thời.
+
+**File.** SchoolClassDao.java và ClassStudentDao.java phụ trách hai bảng. ClassManagementService.java, SchoolClassServlet.java và ClassDirectory.java dùng chung cho hai module. View gồm academic/class-list.jsp, class-form.jsp, class-detail.jsp và class-{filters,paging,token}.jspf. Đã cập nhật account.jsp và assets/css/subjects.css. Kiểm thử thêm scripts/VerifyClasses.java và tích hợp với scripts/VerifySubjects.java, scripts/smoke-test.ps1.
+
+**Kiểm thử thực tế.** PASS Maven Wrapper clean package, Java release 21. PASS VerifyAuth, VerifyUserWrites, VerifyJdbcTransaction, VerifyUserDirectory và các suite VerifyRoles, VerifySubjects, VerifyOfferings, VerifyEnrollments, VerifyClasses. Suite tích hợp dùng Tomcat 10.1 cổng 18082, MySQL 9.6 mới tại 127.0.0.1:13367. Schema test lấy bằng SHOW CREATE TABLE; chỉ đọc metadata và SELECT trên dev. Không chạy migration hoặc seed. Để chạy lại trên schema fixture rỗng, cấu hình credential test qua môi trường theo VerifyRoles rồi chạy scripts/smoke-test.ps1 -TomcatHome <Tomcat-10.1> -Port <cổng trống> -ClassMysql.
+
+PASS Edge headless trên HTML do Tomcat trả về với CSS dự án, đã bỏ trường CSRF: danh sách, chi tiết/thành viên và form ở 390 và 1280 px. Đã sửa encoding UTF-8 trong fragment bộ lọc và giữ bảng thành viên cuộn ngang trên mobile. NOT RUN thao tác trên thiết bị cảm ứng thật. Các bài thử câu hỏi/đáp án chưa áp dụng trong gói học vụ này.
+
+## Giai đoạn 3 · Ngân hàng câu hỏi
+
+Roadmap giao giai đoạn 3 cho Trung. 3A–3C là mã bàn giao cho ba module trong giai đoạn này.
+
+| Module | Trạng thái | Phạm vi nghiệm thu |
+|---|---|---|
+| 3A · Chủ đề | COMPLETED | ADMIN quản lý cây; TEACHER tạo/sửa trong môn phụ trách. Khóa cây theo môn, kiểm tra cha cùng môn, chu trình và mã duy nhất trong môn. Giữ nguyên môn khi sửa. Chặn sửa chủ đề có câu đã đưa vào đề. V3 không có cột trạng thái để lưu trữ chủ đề. |
+| 3B · Ngân hàng | PARTIAL | Giáo viên tạo/sửa ngân hàng sở hữu, đặt PRIVATE/SHARED; ADMIN tra cứu metadata. Số câu đếm theo bank_id. Tên ngân hàng có thể trùng theo V3. Chặn sửa ngân hàng đã có câu trong đề. Phạm vi đọc SHARED của giáo viên khác chờ quyết định trong roadmap. |
+| 3C · Câu hỏi và đáp án | PARTIAL | Đã nghiệm thu tạo/sửa nháp trong ngân hàng sở hữu, lưu version và options cùng transaction, công bố và lưu trữ câu hỏi. Còn quyền đọc nội dung SHARED ngoài sở hữu và ca có tệp đính kèm thực tế. |
+
+**Sử dụng.** Từ tài khoản ADMIN hoặc TEACHER chọn Chủ đề, Ngân hàng câu hỏi hoặc Câu hỏi. GET /{admin,teacher}/{topics,banks,questions} mở danh sách; GET /detail?id=… dưới mỗi đường dẫn mở chi tiết. GET/POST /new và /edit dùng cho vai trò có quyền ghi. POST /teacher/questions/publish và /teacher/questions/archive đổi trạng thái. Danh sách câu hỏi có bộ lọc môn, ngân hàng, chủ đề, loại, độ khó và trạng thái. ADMIN chỉ tra cứu metadata của câu hỏi. JSP hiển thị văn bản đã escape; STUDENT không có đường dẫn soạn thảo hoặc xem đáp án.
+
+**Dữ liệu và lịch sử.** Chủ đề tùy chọn của câu phải cùng môn với ngân hàng. Chủ sở hữu và tác giả lấy từ phiên. Mỗi câu có ít nhất hai phương án khác nhau, không rỗng. SINGLE_CHOICE cần đúng một đáp án đúng; MULTIPLE_CHOICE cần ít nhất một. Sửa nháp tạo version_no mới dưới khóa question. Thay đổi question, version, options và audit dùng chung một connection. Đối chiếu dấu phiên bản từ audit để phát hiện form cũ. Khóa phiên và kiểm tra vai trò trong Service trước khi đọc/ghi. Câu đã công bố hoặc có version được đề tham chiếu bị chặn sửa. Sửa nháp có attachment trên phiên bản hiện hành bị chặn để bảo toàn liên kết tệp.
+
+**File triển khai.** DAO riêng gồm TopicDao.java, QuestionBankDao.java, QuestionDao.java. Ba module dùng chung QuestionCatalogDao.java, model/QuestionCatalog.java, QuestionBankService.java và QuestionCatalogServlet.java. JSP nằm trong WEB-INF/views/question/{list.jsp,detail.jsp,form.jsp,common.jspf}. Đã thêm scripts/VerifyQuestionCatalog.java và cập nhật account.jsp, scripts/VerifySubjects.java, scripts/smoke-test.ps1 cùng tài liệu tiến độ.
+
+**Kiểm thử thực tế.** Maven Wrapper clean package dùng javac release 21. Các suite nghiệm thu chạy độc lập với Surefire.
+
+- PASS MySQL 9.6 cô lập (13367) và Tomcat 10.1 (18082), phiên ADMIN/TEACHER/STUDENT thật. VerifyQuestionCatalog kiểm tra phân trang/lọc, quan hệ cha/con, chủ đề sai môn, mã trùng, cạnh tranh cập nhật, quyền sở hữu, thiếu/sai CSRF, từ chối phiên cũ và bảo mật đáp án. Lỗi audit được chèn ở cả ba module; lỗi ghi phương án khi tạo và khi sửa đều rollback. Kiểm tra sau rollback gồm nội dung, lựa chọn, version và dấu phiên bản. Fixture exam_questions xác minh chặn sửa câu, ngân hàng và chủ đề đã dùng.
+- PASS hồi quy VerifyAuth, VerifyUserWrites, VerifyJdbcTransaction, VerifyUserDirectory, VerifyRoles, VerifySubjects, VerifyOfferings, VerifyEnrollments và VerifyClasses. Tất cả kiểm thử ghi dùng schema thử riêng.
+- PASS Edge headless trên HTML Tomcat đã loại trường CSRF: danh sách, chi tiết, form của cả ba module tại 390 và 1280 px (18 bố cục); kiểm tra tiếng Việt dài, bốn lựa chọn và thêm/bỏ phương án. NOT RUN thiết bị cảm ứng vật lý và fixture draft có attachment thực.
+- Để chạy lại: dùng schema test rỗng V1–V5 và biến môi trường riêng theo điều kiện VerifyRoles (loopback 13367, role_test_<32 ký tự hex thường>), build WAR rồi chạy scripts/smoke-test.ps1 -TomcatHome <Tomcat-10.1> -Port <cổng trống> -CatalogMysql. Các trạng thái 2B–2G giữ theo biên bản trước.
