@@ -378,3 +378,41 @@ Các file 7B gồm AttemptDao.java, AttemptService.java, ProctoringService.java,
 | Responsive 390/1280 px | PASS | Edge kiểm tra chiều rộng trang làm bài trực tiếp và năm trang start/take/confirm/history/events. |
 
 **7B COMPLETED** trên MySQL cô lập cổng 13367, Tomcat 10.1 cổng 18085 và Edge headless. Hàng đợi là best effort trên từng trang. Trình duyệt chỉ thấy các thao tác bên trong phạm vi Browser API; kết quả không xác định ý định của sinh viên.
+
+### 7C · Phiên thi và liên lạc với máy chủ
+
+7C thuộc module 7 của roadmap. V1 cho phép nhiều login_sessions cùng user. Khi đăng nhập, backend đặt sessionRef trong HttpSession; V5 gắn lượt với sinh viên và phân công gốc. V6 đã có attempt_sessions và FK ghép từ proctoring_events về đúng phiên và lượt. V4 có max_parallel_sessions nhưng chưa quy định ngưỡng heartbeat. Hai ngưỡng kỹ thuật bên dưới chỉ phục vụ quan sát. V8 tiếp tục quản lý chọn câu. Không cần V9.
+
+**Heartbeat.** Trang làm bài gửi POST /online-exam/student/proctoring/heartbeat ngay khi mở, mỗi 30 giây sau phản hồi thành công và khi trình duyệt báo online. Body chỉ có attempt và csrf. Service khóa phiên đăng nhập hợp lệ, kiểm tra STUDENT, khóa lượt của đúng sinh viên, kiểm tra deadline và phân công gốc trong cùng transaction. HTTP 204 xác nhận máy chủ vừa nhận liên lạc. 401 biểu thị login mất hiệu lực, 403/404 từ chối truy cập, 409 cho lượt hoặc phân công đã đổi, 503 cho lỗi dữ liệu. Heartbeat và tín hiệu nền không cập nhật login_sessions.last_seen_at. DB vẫn kiểm tra giới hạn nhàn rỗi 30 phút và hạn tuyệt đối 8 giờ.
+
+**Danh tính và thời gian.** Backend sinh SHA-256 từ ID lượt và sessionRef phía server để định danh một hàng attempt_sessions cho mỗi cặp lượt/phiên đăng nhập. Chỉ mốc nhận heartbeat hợp lệ theo UTC MySQL được lưu ở last_seen_at. Hai tab chung cookie cập nhật cùng hàng. Một phiên mới hoặc vừa quay lại, trong khi phiên khác còn hợp lệ đã liên lạc trong 90 giây, tạo CONCURRENT_SESSION_DETECTED. Quan sát này không xác định số thiết bị, số người hay ý định. Server không nhận dạng thiết bị bằng IP hoặc User-Agent.
+
+**Chuyển trạng thái.** Worker độc lập quét tối đa 50 ứng viên mỗi 30 giây, khóa và kiểm tra lại từng lượt trước khi đóng phiên và thêm sự kiện. HEARTBEAT_TIMEOUT (DERIVED) cho biết quá 90 giây chưa có heartbeat của phiên. CONNECTION_RESTORED (SERVER) ghi nhận heartbeat hợp lệ trở lại sau khoảng gián đoạn. SESSION_REVOKED, SESSION_EXPIRED và SESSION_ACCESS_CHANGED phản ánh trạng thái backend quan sát khi lượt còn mở. Nếu không có heartbeat đầu tiên thì chưa có phiên thi để theo dõi. Mốc quét có thể trễ khi máy chủ bận; server không biết thời điểm Wi-Fi thực sự bị ngắt. BROWSER ghi nhận offline/online tự báo qua API 7A. Chỉ đường ghi nội bộ được đặt nguồn SERVER hoặc DERIVED. Heartbeat bình thường không tạo event. Khóa lượt và trạng thái phiên giúp retry không nhân đôi chuyển trạng thái. Trạng thái dùng chung ở MySQL; triển khai hiện tại vẫn cần định tuyến đúng HttpSession trên Tomcat.
+
+**Giao diện.** Trang làm bài phân biệt ngoại tuyến, đang chờ, vừa nhận xác nhận, hết phiên và bị từ chối. Request heartbeat timeout sau 8 giây; lỗi liên tiếp được thử lại với khoảng chờ tăng dần, tối đa năm lần trước khi hiện nút thử lại. Queue sự kiện 7B vẫn ở RAM, tối đa 20 mục và có thể mất khi reload. Autosave, phiên bản đáp án, đồng hồ và nộp bài sử dụng luồng cũ. Trang teacher/proctoring/events lọc theo lượt, sinh viên, mã, khoảng UTC và nguồn. ADMIN vẫn dùng phạm vi chủ đề được phép.
+
+**Tự nghiệm thu với hai trình duyệt trên dữ liệu thử**
+
+1. Dùng tài khoản STUDENT mở một lượt còn hạn. Trong Network quan sát heartbeat trả 204 và dòng xác nhận trên trang.
+2. Mở cùng lượt ở tab thứ hai trong cùng profile. Sau đó đăng nhập lại bằng profile riêng hoặc trình duyệt khác, mở đúng lượt. Giáo viên lọc theo lượt và nguồn SERVER; hai phiên đăng nhập tạo dấu hiệu chồng lấn, hai tab chung phiên không tạo thêm danh tính.
+3. Chuyển profile thứ hai sang Offline trên DevTools trong hơn 90 giây và chờ một chu kỳ quét. Giáo viên lọc DERIVED. Khi chuyển Online, chờ phản hồi heartbeat và kiểm tra CONNECTION_RESTORED nguồn SERVER. Phân biệt với tín hiệu BROWSER và kiểm tra lại các đáp án đã lưu.
+4. Nộp bài trong một profile rồi quay lại profile kia. Heartbeat kế tiếp dừng; kiểm tra lịch sử và điểm của cùng một lượt.
+
+**File 7C.** Backend thêm AttemptHeartbeatServlet, AttemptContactService, AttemptSessionDao; cập nhật AuthenticationFilter, AuthenticationService, AttemptExpiry, AttemptService, ProctoringService, ProctoringEventDao và ProctoringEventServlet. Web thêm assets/js/attempt-contact.js, cập nhật assets/js/browser-proctoring.js, attempt/start.jsp, attempt/take.jsp, attempt/confirm.jsp và proctoring/events.jsp. Kiểm thử nằm trong scripts/VerifyAttempts.java, scripts/verify-attempt-browser.mjs.
+
+#### Nghiệm thu 7C
+
+| Nhóm | Kết quả | Phạm vi kiểm chứng |
+|---|---|---|
+| Build | PASS | Maven Wrapper clean package, Java release 21, target/online-exam.war. VerifyAuth và VerifyJdbcTransaction chạy độc lập. |
+| Heartbeat | PASS | Tomcat và MySQL scratch xác nhận đúng lượt, CSRF, chủ lượt, login idle, deadline, retry, hết giờ và lượt đã nộp. |
+| Kết nối | PASS | DevTools mô phỏng offline/online và HTTP 503. Edge lưu được đáp án và bấm nộp bài trong kịch bản trì hoãn heartbeat. Bộ kiểm thử đặt mốc last_seen_at của fixture lùi lại để tái hiện timeout ở backend. |
+| Đồng thời và rollback | PASS | Hai request cùng phiên, hai login cùng lượt, thu hồi phiên khi request đang đợi và cạnh tranh với submit. Lỗi INSERT sự kiện do trigger trên MySQL thử trả 503; mốc liên lạc không được commit một phần. |
+| 7A và 7B | PASS | Năm mã tín hiệu, giới hạn 30 sự kiện, quyền sở hữu, lọc lịch sử và CSRF. Edge dùng hai profile riêng và hai tab chung cookie. |
+| Hồi quy lượt thi | PASS | Hai sinh viên, FIXED và RANDOM_PER_ATTEMPT 40/50, resume, autosave, reload, nộp bài, hết giờ, lịch sử và chấm điểm. |
+| Responsive | PASS | Edge headless 390/1280 px trên các trang bắt đầu, làm bài, xác nhận, lịch sử và sự kiện. |
+| Thiết bị và hạ tầng | NOT RUN | Hai thiết bị vật lý, ngắt Wi-Fi thật, nhiều Tomcat node, benchmark tải và sự cố tắt toàn bộ MySQL. |
+
+Trong lần chạy đầu của ca nộp từ Edge, MySQL vẫn báo IN_PROGRESS sau khi trình duyệt rời trang xác nhận. Form POST kế thừa query action=confirm từ URL và xung đột với action=submit. Các form trong start.jsp, take.jsp và confirm.jsp nay gửi trực tiếp về attempts. Test nộp cuối yêu cầu Edge tải đúng tiêu đề lịch sử, sau đó đọc trạng thái SUBMITTED và điểm từ MySQL.
+
+**7C COMPLETED · 22/11/2026.** Sau khi sửa đích POST, bộ nghiệm thu chạy hết với exit code 0 trên MySQL 9.6 cô lập (13367), Tomcat 10.1 (18085) và Edge headless. MySQL xác nhận SUBMITTED và điểm 1/40 cho fixture đã chọn đúng một câu. Hồi quy thu hồi quyền, nộp bài đồng thời và cả 10 phép đo chiều rộng đều đạt.
